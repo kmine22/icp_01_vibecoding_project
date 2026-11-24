@@ -1,12 +1,17 @@
 import http.client
 import ipaddress
 import json
+import re
 import socket
 import ssl
 from html.parser import HTMLParser
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urljoin, urlsplit
+from urllib.parse import parse_qs, urlencode, urljoin, urlsplit
+
+
+class PreviewBlocked(ValueError):
+    pass
 
 
 class Metadata(HTMLParser):
@@ -34,9 +39,17 @@ class Metadata(HTMLParser):
             self.title.append(data)
 
 
-def preview(url):
+def fetch_preview(url, *, oembed=False):
+    accept = 'application/json' if oembed else 'text/html'
+    content_types = ('application/json',) if oembed else ('text/html', 'application/xhtml+xml')
+    check_redirected_pin = not oembed and urlsplit(url).netloc.lower() == 'pin.it'
     for _ in range(4):
         parts = urlsplit(url)
+        if check_redirected_pin and (endpoint := pinterest_endpoint(parts)):
+            check_redirected_pin = False
+            result = try_oembed(endpoint)
+            if result and result['image']:
+                return result
         if parts.scheme not in ('http', 'https') or not parts.hostname or parts.username or parts.password:
             raise ValueError('Enter a public HTTP or HTTPS link.')
         port = 443 if parts.scheme == 'https' else 80
@@ -65,30 +78,97 @@ def preview(url):
             path = parts.path or '/'
             if parts.query:
                 path += '?' + parts.query
-            connection.request('GET', path, headers={'User-Agent': 'StudyPlanner/1.0', 'Accept': 'text/html'})
+            connection.request('GET', path, headers={'User-Agent': 'StudyPlanner/1.0', 'Accept': accept})
             response = connection.getresponse()
             if response.status in (301, 302, 303, 307, 308) and response.getheader('Location'):
                 url = urljoin(url, response.getheader('Location'))
                 continue
-            if response.status != 200 or response.headers.get_content_type() not in ('text/html', 'application/xhtml+xml'):
+            if response.status in (401, 403):
+                raise PreviewBlocked('The source site denied preview access.')
+            if response.status != 200 or response.headers.get_content_type() not in content_types:
                 raise ValueError('This page does not provide a preview.')
             markup = response.read(512 * 1024)
             charset = response.headers.get_content_charset() or 'utf-8'
+            if oembed:
+                payload = json.loads(markup.decode(charset))
+                if not isinstance(payload, dict):
+                    raise ValueError('Invalid preview metadata.')
+                return {
+                    'title': preview_text(payload.get('title'), 200),
+                    'description': preview_text(payload.get('description'), 350),
+                    'image': image_url(url, payload.get('thumbnail_url')),
+                }
             metadata = Metadata()
             metadata.feed(markup.decode(charset, errors='replace'))
             tags = metadata.tags
-            image = tags.get('og:image') or tags.get('twitter:image')
-            image = urljoin(url, image) if image else ''
-            if urlsplit(image).scheme not in ('http', 'https') or len(image) > 2048:
-                image = ''
             return {
                 'title': (tags.get('og:title') or tags.get('twitter:title') or ' '.join(''.join(metadata.title).split()))[:200],
                 'description': (tags.get('og:description') or tags.get('description') or tags.get('twitter:description') or '')[:350],
-                'image': image,
+                'image': image_url(url, tags.get('og:image') or tags.get('twitter:image')),
             }
         finally:
             connection.close()
     raise ValueError('This link redirects too many times.')
+
+
+def preview_text(value, limit):
+    return value.strip()[:limit] if isinstance(value, str) else ''
+
+
+def image_url(base, value):
+    if not isinstance(value, str) or not value.strip():
+        return ''
+    try:
+        image = urljoin(base, value.strip())
+        parts = urlsplit(image)
+    except ValueError:
+        return ''
+    return image if parts.scheme in ('http', 'https') and parts.hostname and len(image) <= 2048 else ''
+
+
+def pinterest_endpoint(parts):
+    hosts = ('pinterest.com', 'www.pinterest.com', 'kr.pinterest.com',
+             'pinterest.co.kr', 'www.pinterest.co.kr',
+             'pinterest.co.uk', 'www.pinterest.co.uk', 'pinterest.ca', 'www.pinterest.ca',
+             'pinterest.de', 'www.pinterest.de', 'pinterest.fr', 'www.pinterest.fr')
+    if parts.scheme not in ('http', 'https') or parts.netloc.lower() not in hosts:
+        return None
+    match = re.fullmatch(r'/pin/(?:[^/]+--)?([0-9]+)/?', parts.path)
+    if not match:
+        return None
+    pin = f'https://www.pinterest.com/pin/{match[1]}/'
+    return 'https://www.pinterest.com/oembed.json?' + urlencode({'url': pin})
+
+
+def try_oembed(endpoint):
+    try:
+        return fetch_preview(endpoint, oembed=True)
+    except (ValueError, OSError, http.client.HTTPException, LookupError):
+        return None
+
+
+def preview(url):
+    parts = urlsplit(url)
+    endpoint = pinterest_endpoint(parts)
+    if (
+        parts.scheme in ('http', 'https')
+        and parts.netloc.lower() in ('behance.net', 'www.behance.net')
+        and parts.path.startswith('/gallery/')
+    ):
+        project = 'https://www.behance.net' + parts.path
+        endpoint = 'https://www.behance.net/services/oembed?' + urlencode({'url': project, 'format': 'json'})
+    if not endpoint:
+        return fetch_preview(url)
+    result = try_oembed(endpoint)
+    if result and result['image']:
+        return result
+    try:
+        html = fetch_preview(url)
+    except (ValueError, OSError, http.client.HTTPException, LookupError):
+        if not result or not any(result.values()):
+            raise
+        return result
+    return {key: value or (result or {}).get(key, '') for key, value in html.items()}
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -105,6 +185,9 @@ class Handler(SimpleHTTPRequestHandler):
             if not url or len(url) > 4096:
                 raise ValueError('Enter a valid website link.')
             payload = preview(url)
+        except PreviewBlocked:
+            status = 422
+            payload = {'error': 'The source site denied preview access. You can still save the link or add an image.'}
         except (ValueError, OSError, http.client.HTTPException, LookupError):
             status = 422
             payload = {'error': 'Preview unavailable. You can still save this link.'}
