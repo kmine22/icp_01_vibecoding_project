@@ -4,7 +4,7 @@ Study Planner is a monthly calendar with drag-and-drop task scheduling and a moo
 
 ## Run locally
 
-From the repository root, run `python3 server.py` and open <link>. No third-party Python packages are required. Link previews use your internet connection to read public pages.
+From the repository root, run `python3 server.py` and open link in local browser. No third-party Python packages are required. Link previews use your internet connection to read public pages.
 
 <!-- BEGIN UPDATE HISTORY -->
 ## Update history
