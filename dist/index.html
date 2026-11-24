@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Study Planner</title>
+<meta name="description" content="A monthly calendar, task list, and moodboard for studying.">
+<link rel="stylesheet" href="style.css">
+<script defer src="app.js"></script>
+</head>
+<body>
+<header class="top"><div class="brand"><span class="mark" aria-hidden="true">▦</span> Study Planner</div><nav aria-label="Views"><button id="planner-tab" aria-pressed="true">Planner</button><button id="board-tab" aria-pressed="false">Moodboard</button></nav></header>
+<main>
+<section id="planner">
+<div class="layout">
+<section class="calendar" aria-labelledby="month-title">
+<header class="heading"><h1 id="month-title"></h1><div class="controls"><button id="previous" aria-label="Previous month">‹</button><button id="today">Today</button><button id="next" aria-label="Next month">›</button></div></header>
+<div class="weekdays" aria-hidden="true"><span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span></div>
+<div id="days" class="days"></div>
+</section>
+<aside class="panel" aria-labelledby="tasks-title">
+<h2 id="tasks-title">All tasks <span id="task-count"></span></h2>
+<form id="task-form" class="inline"><input id="task-input" aria-label="New task" placeholder="Add a task…" maxlength="160" required><button aria-label="Add task">+</button></form>
+<p class="hint">Drag a task onto a date, or open it to schedule.</p>
+<div id="tasks"></div>
+</aside>
+</div>
+</section>
+<section id="board" hidden>
+<header class="heading"><h1>Moodboard</h1><button id="new-scrap">+ Add scrap</button></header>
+<div id="scraps"></div>
+</section>
+</main>
+<dialog id="day-dialog"><header class="dialog-head"><h2 id="day-title"></h2><button class="close" aria-label="Close day">×</button></header><form id="day-form" class="inline"><input id="day-input" aria-label="New task for this day" placeholder="Add a task for this day…" maxlength="160" required><button aria-label="Add task to this day">+</button></form><div id="day-tasks"></div></dialog>
+<dialog id="task-dialog"><header class="dialog-head"><h2 id="edit-heading">Edit task</h2><button class="close" aria-label="Close task">×</button></header><form id="edit-form"><label>Task<input id="edit-title" required maxlength="160"></label><label>Scheduled date<input id="edit-date" type="date"></label><div class="actions"><button type="button" id="delete-task">Delete task</button><button class="primary">Save</button></div></form></dialog>
+<dialog id="scrap-dialog"><header class="dialog-head"><h2 id="scrap-heading">Add scrap</h2><button class="close" aria-label="Close scrap">×</button></header><form id="scrap-form"><label>Title<input id="scrap-title" maxlength="100"></label><label>Note<textarea id="scrap-note" rows="4" maxlength="2000"></textarea></label><label>Link<input id="scrap-link" type="url" placeholder="https://"></label><div id="link-preview" aria-live="polite" hidden></div><label>Image<input id="scrap-image" type="file" accept="image/*"></label><p id="scrap-error" role="alert"></p><div class="actions"><button type="button" id="delete-scrap" hidden>Delete scrap</button><button class="primary">Save scrap</button></div></form></dialog>
+<div id="status" role="status"></div>
+</body>
+</html>
