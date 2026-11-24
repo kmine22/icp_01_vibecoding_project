@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-link-previews="off">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -108,8 +108,13 @@
 </div>
 <fieldset class="task-tag-editor"><legend>Tags</legend>
 <div id="event-edit-tags" class="tag-editor-list" aria-label="Selected tags"></div>
-<div class="inline"><input id="event-tag-name" list="event-known-tags" aria-label="Tag name" placeholder="Choose or create a tag…" maxlength="32"><button type="button" id="add-event-tag">Add tag</button></div>
-<datalist id="event-known-tags"></datalist>
+<div class="tag-picker">
+<div class="inline">
+<div class="tag-picker-field"><input id="event-tag-name" role="combobox" aria-expanded="false" aria-controls="event-known-tags" aria-autocomplete="list" aria-label="Tag name" autocomplete="off" placeholder="Choose or create a tag…" maxlength="32"><button id="toggle-event-tags" class="tag-picker-toggle" type="button" aria-label="Show available tags" tabindex="-1"><span aria-hidden="true">▾</span></button></div>
+<button type="button" id="add-event-tag">Add tag</button>
+</div>
+<div id="event-known-tags" class="tag-picker-options" role="listbox" aria-label="Available tags" hidden></div>
+</div>
 </fieldset>
 <label class="event-completion"><input id="event-done" type="checkbox"> Completed</label>
 <p id="event-error" role="alert"></p>
@@ -119,8 +124,13 @@
 <dialog id="task-dialog"><header class="dialog-head"><h2 id="edit-heading">Edit task</h2><button class="close" aria-label="Close task">×</button></header><form id="edit-form"><label>Task<input id="edit-title" required maxlength="160"></label><label>Scheduled date<input id="edit-date" type="date"></label>
 <fieldset class="task-tag-editor"><legend>Tags</legend>
 <div id="edit-tags" class="tag-editor-list" aria-label="Selected tags"></div>
-<div class="inline"><input id="tag-name" list="known-tags" aria-label="Tag name" placeholder="Choose or create a tag…" maxlength="32"><button type="button" id="add-tag">Add tag</button></div>
-<datalist id="known-tags"></datalist>
+<div class="tag-picker">
+<div class="inline">
+<div class="tag-picker-field"><input id="tag-name" role="combobox" aria-expanded="false" aria-controls="known-tags" aria-autocomplete="list" aria-label="Tag name" autocomplete="off" placeholder="Choose or create a tag…" maxlength="32"><button id="toggle-task-tags" class="tag-picker-toggle" type="button" aria-label="Show available tags" tabindex="-1"><span aria-hidden="true">▾</span></button></div>
+<button type="button" id="add-tag">Add tag</button>
+</div>
+<div id="known-tags" class="tag-picker-options" role="listbox" aria-label="Available tags" hidden></div>
+</div>
 </fieldset>
 <div class="actions"><button type="button" id="delete-task">Delete task</button><button class="primary">Save</button></div></form></dialog>
 <dialog id="tag-dialog">
@@ -129,8 +139,13 @@
 <label>Tag name<input id="manage-tag-name" required maxlength="32"></label>
 <fieldset class="task-tag-editor"><legend>Color</legend><div id="tag-palette" class="tag-palette" role="group" aria-label="Tag color"></div></fieldset>
 <p id="tag-error" role="alert"></p>
-<div class="actions"><button type="button" id="delete-tag" class="danger-text" hidden>Delete tag</button><button class="primary">Save tag</button></div>
+<div class="actions tag-editor-actions"><button type="button" id="delete-tag" class="danger-button" hidden>Delete tag</button><button class="primary">Save tag</button></div>
 </form>
+</dialog>
+<dialog id="delete-tag-dialog" aria-describedby="delete-tag-message">
+<header class="dialog-head"><h2 id="delete-tag-heading">Delete tag?</h2><button class="close" aria-label="Close delete tag dialog">×</button></header>
+<p id="delete-tag-message" class="delete-message"></p>
+<div class="actions"><button id="cancel-tag-delete" type="button" autofocus>Cancel</button><button id="confirm-tag-delete" type="button" class="danger-button">Delete tag</button></div>
 </dialog>
 <dialog id="board-dialog">
 <header class="dialog-head"><h2 id="board-heading">New board</h2><button class="close" aria-label="Close board editor">×</button></header>

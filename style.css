@@ -151,13 +151,23 @@ form select{display:block;margin-top:.35rem;width:100%;font:inherit;color:inheri
 .task-tags,.tag-editor-list{display:flex;align-items:center;flex-wrap:wrap;gap:.25rem}
 .task-tags{margin-top:.32rem}
 .tag-editor-list:not(:empty){margin-bottom:.5rem}
-.task-tag{background:var(--chip);color:var(--text);border:1px solid var(--line);border-radius:999px;padding:.12rem .45rem;font-size:.78rem;line-height:1.4;overflow-wrap:anywhere;max-width:100%}
+.task-tag{display:inline-flex;align-items:center;gap:.35rem;background:var(--chip);color:var(--text);border:1px solid var(--line);border-radius:999px;padding:.23rem .6rem;font-size:.82rem;line-height:1.4;overflow-wrap:anywhere;max-width:100%}
+.task-tag::before{content:"";width:.55rem;height:.55rem;flex:none;border-radius:50%;background:var(--tag-color,var(--muted))}
+.tag-picker-field{position:relative;flex:1;min-width:0}
+.tag-picker-field input{padding-right:2rem}
+.tag-picker-toggle{position:absolute;inset:.2rem .2rem .2rem auto;padding:0 .45rem;background:transparent;border:0;color:var(--muted)}
+.tag-picker-options{display:grid;gap:.15rem;max-height:10rem;overflow:auto;margin-top:.35rem;padding:.25rem;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+.tag-picker-option{display:flex;gap:.5rem;align-items:center;width:100%;text-align:left;padding:.4rem .55rem;background:transparent;border:0;overflow-wrap:anywhere}
+.tag-picker-option .tag-dot{flex:none}
+.tag-picker-option:hover,.tag-picker-option[aria-selected=true]{background:var(--chip)}
 button:disabled{cursor:default;opacity:.5}
 #delete-board-message{margin-bottom:.85rem;line-height:1.5;color:var(--muted)}
 #delete-board-heading{overflow-wrap:anywhere;min-width:0}
 .danger-text{color:#ffc0c6}
 .danger-button{background:#9d3849;color:#fff}
 .danger-button:not(:disabled):hover{background:#ad4052}
+.tag-editor-actions #delete-tag{margin-right:auto}
+.delete-message{color:var(--muted);line-height:1.5}
 :root[data-mode="light"] .danger-text{color:#972e41}
 @media(prefers-reduced-motion:no-preference){
   button{transition:background-color .16s ease,border-color .16s ease,color .16s ease,box-shadow .16s ease,transform .14s ease}
@@ -219,8 +229,9 @@ button:disabled{cursor:default;opacity:.5}
 .task:has(.tag-shortcut){display:grid;grid-template-columns:auto minmax(0,1fr) auto}
 .tag-shortcut{white-space:nowrap;padding:.25rem .4rem;font-size:.8rem;color:var(--text);background:var(--chip)}
 .task > .task-tags{grid-column:2 / -1;margin:0 0 .15rem .3rem}
-.task-tag{border-color:var(--tag-color,var(--muted));background:color-mix(in srgb,var(--tag-color,var(--accent)) 14%,var(--card));font-weight:550}
-.remove-tag{padding:.12rem .2rem;background:transparent;border:0;font-size:inherit;overflow-wrap:anywhere}
+.task-tag{border-color:var(--tag-color,var(--muted));background:color-mix(in srgb,var(--tag-color,var(--accent)) 22%,var(--card));font-weight:550}
+.remove-tag:hover{background:color-mix(in srgb,var(--tag-color,var(--accent)) 34%,var(--card))}
+.has-primary-tag-color{background:color-mix(in srgb,var(--primary-tag-color) 26%,var(--card));border-left-color:var(--primary-tag-color);box-shadow:inset 3px 0 var(--primary-tag-color)}
 .create-plus{display:grid;place-items:center;width:1.55rem;height:1.55rem}
 .create-plus::before,.create-plus::after{content:"";grid-area:1 / 1;width:100%;height:2.5px;border-radius:99px;background:currentColor}
 .create-plus::after{transform:rotate(90deg)}
@@ -236,6 +247,7 @@ button:disabled{cursor:default;opacity:.5}
 .tag-list-item{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:.55rem;width:100%;margin-top:.25rem;text-align:left;border-color:transparent;background:transparent}
 .tag-list-item[aria-pressed=true]{background:var(--chip);border-color:var(--line)}
 .tag-dot,.tag-swatch{width:.68rem;height:.68rem;border-radius:50%;background:var(--tag-color,var(--accent))}
+.tag-dot.untagged-dot{background:#fff;border:1px solid #9ba0a8}
 .tag-list-name,#tag-tasks-heading{overflow-wrap:anywhere}
 .tag-list-count{color:var(--muted);font-size:.85rem;font-variant-numeric:tabular-nums}
 .tag-palette{display:flex;gap:.4rem;flex-wrap:wrap;padding:.24rem}

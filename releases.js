@@ -1,5 +1,9 @@
 // Collect user-facing changes here until the next release.
-const unreleasedChanges = [];
+const unreleasedChanges = [
+  'Single-day events and tasks use the color of their first tag. The shared tag editor has a themed dropdown and roomier color chips, and Untagged has a white swatch.',
+  'Deleting a tag now opens a confirmation that shows how many tasks and events use it.',
+  'Added a browser-only edition for GitHub Pages that supports saved links and uploaded images.',
+];
 
 const releaseHistory = [
   ['v1.0', 'Created the monthly planner. Add tasks by clicking a date or drag them from the task list onto the calendar.'],

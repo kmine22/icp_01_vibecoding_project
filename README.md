@@ -1,13 +1,16 @@
-# icp_01_vibecoding_project
+# Study Planner for GitHub Pages
 
-Study Planner is a monthly calendar with drag-and-drop task scheduling and a moodboard for notes, images, and links. Tasks and scraps are saved in your browser.
+This edition runs in your browser. Save links and upload images to add thumbnails to moodboard cards. Your planner data stays in the current browser.
 
-## Run locally
+The Python edition and local setup instructions are on the `main` branch.
 
-From the repository root, run `python3 server.py` and open link in local browser. No third-party Python packages are required. Link previews use your internet connection to read public pages.
-
-<!-- BEGIN UPDATE HISTORY -->
 ## Update history
+
+### Unreleased
+
+- Single-day events and tasks use the color of their first tag. The shared tag editor has a themed dropdown and roomier color chips, and Untagged has a white swatch.
+- Deleting a tag now opens a confirmation that shows how many tasks and events use it.
+- Added a browser-only edition for GitHub Pages that supports saved links and uploaded images.
 
 ### v2.15
 
@@ -122,4 +125,3 @@ From the repository root, run `python3 server.py` and open link in local browser
 ### v1.0
 
 - Created the monthly planner. Add tasks by clicking a date or drag them from the task list onto the calendar.
-<!-- END UPDATE HISTORY -->
