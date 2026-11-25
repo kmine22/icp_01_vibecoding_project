@@ -9,6 +9,12 @@ From the repository root, run `python3 server.py` and open link in local browser
 <!-- BEGIN UPDATE HISTORY -->
 ## Update history
 
+### v2.16
+
+- Single-day events and tasks use the color of their first tag. The shared tag editor has a themed dropdown and roomier color chips, and Untagged has a white swatch.
+- Deleting a tag now opens a confirmation that shows how many tasks and events use it.
+- Added a browser-only edition for GitHub Pages that supports saved links and uploaded images.
+
 ### v2.15
 
 - Tasks and events share multiple tags, the same tag editor, and the Tags view.

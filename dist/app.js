@@ -1,5 +1,6 @@
 const byId = (id) => document.getElementById(id);
 const storageKey = 'study-planner-v1';
+const linkPreviewsEnabled = document.documentElement.dataset.linkPreviews !== 'off';
 const defaultBoard = { id: 'general', name: 'General' };
 const defaultSettings = { name: 'Study Planner', theme: 'graphite', appearance: 'dark', iconType: 'default', iconValue: '' };
 let data = { settings: defaultSettings, boards: [defaultBoard], tasks: [], taskTags: [], tagColors: {}, scraps: [], events: [], filters: { tasks: true, events: true, hiddenTags: [], untagged: true } };
@@ -158,7 +159,7 @@ byId('scrap-link').addEventListener('input', () => {
   suggestedTitle = '';
   const url = byId('scrap-link').value.trim();
   showDraft();
-  if (!/^https?:\/\//i.test(url)) return;
+  if (!linkPreviewsEnabled || !/^https?:\/\//i.test(url)) return;
   showDraft(element('p', 'hint', 'Loading preview…'));
   previewTimer = setTimeout(async () => {
     const isCurrent = () => byId('scrap-dialog').open && byId('scrap-link').value.trim() === url;
@@ -300,12 +301,16 @@ function appendDayItems(cell, tasks, events, lanes) {
   const total = tasks.length + events.length;
   const itemRows = total > availableRows ? availableRows - 1 : availableRows;
   const eventRows = tasks.length ? Math.max(0, itemRows - 1) : itemRows;
-  const eventChips = events.slice(0, eventRows).map((event) =>
-    element('span', 'chip event-chip', (event.start ? displayTime(event.start) + ' ' : '') + event.title)
-  );
-  const taskChips = tasks.slice(0, itemRows - eventChips.length).map((task) =>
-    element('span', task.done ? 'chip done' : 'chip', task.title)
-  );
+  const eventChips = events.slice(0, eventRows).map((event) => {
+    const chip = element('span', 'chip event-chip', (event.start ? displayTime(event.start) + ' ' : '') + event.title);
+    applyPrimaryTagColor(chip, event);
+    return chip;
+  });
+  const taskChips = tasks.slice(0, itemRows - eventChips.length).map((task) => {
+    const chip = element('span', task.done ? 'chip done' : 'chip', task.title);
+    applyPrimaryTagColor(chip, task);
+    return chip;
+  });
   cell.append(...eventChips, ...taskChips);
   const remaining = total - taskChips.length - eventChips.length;
   if (remaining) cell.append(element('span', 'more', '+' + remaining + ' more'));
@@ -383,13 +388,71 @@ function renderCalendar() {
   byId('days').replaceChildren(cells);
 }
 
-function applyTagColor(node, color) {
-  if (/^#[0-9a-f]{6}$/i.test(color)) node.style.setProperty('--tag-color', color);
+function applyTagColor(node, color, property = '--tag-color') {
+  if (/^#[0-9a-f]{6}$/i.test(color)) {
+    node.style.setProperty(property, color);
+    return true;
+  }
+  return false;
 }
 
-function createTagEditor(listId, inputId, optionsId, addId) {
+function applyPrimaryTagColor(node, item) {
+  if (applyTagColor(node, data.tagColors[item.tags?.[0]], '--primary-tag-color')) {
+    node.classList.add('has-primary-tag-color');
+  }
+}
+
+function createTagEditor(listId, inputId, optionsId, addId, toggleId) {
   const input = byId(inputId);
+  const picker = input.closest('.tag-picker');
+  const menu = byId(optionsId);
   let tags = [];
+  let matches = [];
+  let activeOption = -1;
+
+  function closeMenu() {
+    menu.hidden = true;
+    activeOption = -1;
+    input.setAttribute('aria-expanded', 'false');
+    input.removeAttribute('aria-activedescendant');
+  }
+
+  function showMenu() {
+    const query = input.value.trim().toLowerCase();
+    matches = data.taskTags.filter((tag) => !tags.includes(tag) && tag.toLowerCase().includes(query));
+    closeMenu();
+    menu.replaceChildren(...matches.map((tag, index) => {
+      const option = element('button', 'tag-picker-option');
+      option.type = 'button';
+      option.tabIndex = -1;
+      option.id = optionsId + '-' + index;
+      option.setAttribute('role', 'option');
+      option.setAttribute('aria-selected', 'false');
+      const dot = element('span', 'tag-dot');
+      dot.setAttribute('aria-hidden', 'true');
+      applyTagColor(dot, data.tagColors[tag]);
+      option.append(dot, element('span', '', tag));
+      option.onclick = () => {
+        input.focus();
+        addTag(tag);
+      };
+      return option;
+    }));
+    if (matches.length) {
+      menu.hidden = false;
+      input.setAttribute('aria-expanded', 'true');
+    }
+  }
+
+  function highlightOption(index) {
+    menu.children[activeOption]?.setAttribute('aria-selected', 'false');
+    activeOption = index;
+    const option = menu.children[index];
+    option.setAttribute('aria-selected', 'true');
+    input.setAttribute('aria-activedescendant', option.id);
+    option.scrollIntoView({ block: 'nearest' });
+  }
+
   function renderEditor() {
     byId(listId).replaceChildren(...tags.map((tag) => {
       const remove = element('button', 'task-tag remove-tag', tag + ' ×');
@@ -398,33 +461,56 @@ function createTagEditor(listId, inputId, optionsId, addId) {
       remove.setAttribute('aria-label', 'Remove tag ' + tag);
       remove.onclick = () => {
         tags = tags.filter((item) => item !== tag);
-        renderEditor();
         input.focus();
+        renderEditor();
+        showMenu();
       };
       return remove;
     }));
-    byId(optionsId).replaceChildren(...data.taskTags.filter((tag) => !tags.includes(tag)).map((tag) => {
-      const option = element('option');
-      option.value = tag;
-      return option;
-    }));
   }
-  function addTag() {
-    const name = input.value.trim().replace(/\s+/g, ' ');
-    if (!name) return;
-    const tag = data.taskTags.find((item) => item.toLowerCase() === name.toLowerCase()) || name;
-    if (!tags.some((item) => item.toLowerCase() === tag.toLowerCase())) tags.push(tag);
-    input.value = '';
-    renderEditor();
+
+  function addTag(value = input.value) {
+    const name = value.trim().replace(/\s+/g, ' ');
+    if (name) {
+      const tag = data.taskTags.find((item) => item.toLowerCase() === name.toLowerCase()) || name;
+      if (!tags.some((item) => item.toLowerCase() === tag.toLowerCase())) tags.push(tag);
+      input.value = '';
+      renderEditor();
+    }
+    closeMenu();
   }
   byId(addId).onclick = () => {
-    addTag();
     input.focus();
+    addTag();
   };
+  byId(toggleId).onclick = () => {
+    const wasOpen = !menu.hidden;
+    input.focus();
+    if (wasOpen) closeMenu();
+    else showMenu();
+  };
+  picker.addEventListener('focusout', (event) => {
+    if (!picker.contains(event.relatedTarget)) closeMenu();
+  });
+  menu.addEventListener('mousedown', (event) => event.preventDefault());
+  input.addEventListener('focus', showMenu);
+  input.addEventListener('input', showMenu);
   input.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter' && !event.isComposing && input.value.trim()) {
+    if (event.isComposing) return;
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      if (menu.hidden) showMenu();
+      if (!matches.length) return;
       event.preventDefault();
-      addTag();
+      const next = activeOption < 0 ? (event.key === 'ArrowDown' ? 0 : matches.length - 1)
+        : Math.max(0, Math.min(matches.length - 1, activeOption + (event.key === 'ArrowDown' ? 1 : -1)));
+      highlightOption(next);
+    } else if (event.key === 'Escape' && !menu.hidden) {
+      event.preventDefault();
+      event.stopPropagation();
+      closeMenu();
+    } else if (event.key === 'Enter' && (activeOption >= 0 || input.value.trim())) {
+      event.preventDefault();
+      addTag(matches[activeOption] ?? input.value);
     }
   });
   return {
@@ -432,6 +518,7 @@ function createTagEditor(listId, inputId, optionsId, addId) {
       tags = [...value];
       input.value = '';
       renderEditor();
+      closeMenu();
     },
     read() {
       addTag();
@@ -440,8 +527,8 @@ function createTagEditor(listId, inputId, optionsId, addId) {
   };
 }
 
-const taskTagEditor = createTagEditor('edit-tags', 'tag-name', 'known-tags', 'add-tag');
-const eventTagEditor = createTagEditor('event-edit-tags', 'event-tag-name', 'event-known-tags', 'add-event-tag');
+const taskTagEditor = createTagEditor('edit-tags', 'tag-name', 'known-tags', 'add-tag', 'toggle-task-tags');
+const eventTagEditor = createTagEditor('event-edit-tags', 'event-tag-name', 'event-known-tags', 'add-event-tag', 'toggle-event-tags');
 
 function openTask(task, focusTags = false) {
   activeTask = task.id;
@@ -454,6 +541,7 @@ function openTask(task, focusTags = false) {
 
 function taskRow(task, showDate, draggable = showDate) {
   const row = element('div', 'task');
+  applyPrimaryTagColor(row, task);
   const checkbox = element('input');
   checkbox.type = 'checkbox';
   checkbox.checked = task.done;
@@ -520,12 +608,10 @@ function renderTagFilter() {
       else checkbox.checked = visible;
     };
     label.append(checkbox);
-    if (tag) {
-      const dot = element('span', 'tag-dot');
-      dot.setAttribute('aria-hidden', 'true');
-      applyTagColor(dot, data.tagColors[tag]);
-      label.append(dot);
-    }
+    const dot = element('span', tag ? 'tag-dot' : 'tag-dot untagged-dot');
+    dot.setAttribute('aria-hidden', 'true');
+    if (tag) applyTagColor(dot, data.tagColors[tag]);
+    label.append(dot);
     label.append(element('span', '', tag || 'Untagged'));
     return label;
   });
@@ -583,6 +669,7 @@ function renderDayScraps() {
 
 function eventRow(event, date, showDate = false) {
   const row = element('button', 'event-row');
+  applyPrimaryTagColor(row, event);
   const time = eventTime(event, date);
   row.append(element('span', 'task-date', showDate ? shortDate(date) + ' · ' + time : time),
     element('span', event.done ? 'done' : '', event.title));
@@ -1087,7 +1174,22 @@ byId('tag-form').onsubmit = (event) => {
   }
 };
 byId('delete-tag').onclick = () => {
-  if (!editingTag || !window.confirm('Remove this tag from all tasks and events?')) return;
+  if (!editingTag) return;
+  const taskCount = data.tasks.filter((task) => task.tags?.includes(editingTag)).length;
+  const eventCount = data.events.filter((event) => event.tags?.includes(editingTag)).length;
+  const assignments = [
+    taskCount && taskCount + (taskCount === 1 ? ' task' : ' tasks'),
+    eventCount && eventCount + (eventCount === 1 ? ' event' : ' events'),
+  ].filter(Boolean).join(' and ');
+  byId('delete-tag-heading').textContent = 'Delete “' + editingTag + '”?';
+  byId('delete-tag-message').textContent = assignments
+    ? 'This deletes the tag and removes it from ' + assignments + '. Your tasks and events will stay in the planner.'
+    : 'This deletes the tag and its color from your planner.';
+  byId('delete-tag-dialog').showModal();
+};
+byId('cancel-tag-delete').onclick = () => byId('delete-tag-dialog').close();
+byId('confirm-tag-delete').onclick = () => {
+  if (!editingTag) return;
   const taskTags = data.taskTags.filter((tag) => tag !== editingTag);
   const tasks = replaceTag(data.tasks, editingTag, '');
   const tagColors = { ...data.tagColors };
@@ -1095,6 +1197,7 @@ byId('delete-tag').onclick = () => {
   const events = replaceTag(data.events, editingTag, '');
   const filters = { ...data.filters, hiddenTags: data.filters.hiddenTags.filter((tag) => tag !== editingTag) };
   if (save({ ...data, taskTags, tasks, tagColors, events, filters })) {
+    byId('delete-tag-dialog').close();
     byId('tag-dialog').close();
     byId('new-tag').focus();
   }
@@ -1495,7 +1598,7 @@ byId('scrap-form').onsubmit = async (event) => {
     }
   }
   let preview = draftPreview;
-  if (link && !preview) {
+  if (linkPreviewsEnabled && link && !preview) {
     cancelPreview();
     try {
       showDraft(element('p', 'hint', 'Loading preview…'));
