@@ -239,6 +239,7 @@ button:disabled{cursor:default;opacity:.5}
 @media(prefers-reduced-motion:no-preference) and (hover:hover) and (pointer:fine){
   .create-actions button{transition:background-color .16s ease,border-color .16s ease,border-radius .19s ease-out,transform .19s ease-out}
   .create-actions button:not(:disabled):hover{transform:translate(var(--pull-x,0),var(--pull-y,0)) scale(1.09);border-radius:var(--pull-shape,50%)}
+  .create-actions:has(button:not(:disabled):hover) button:not(:hover){transform:scale(.91)}
 }
 .tags-layout{display:grid;grid-template-columns:minmax(180px,250px) minmax(0,1fr);gap:1rem;align-items:start}
 .tags-layout .section-head h2{margin:0}

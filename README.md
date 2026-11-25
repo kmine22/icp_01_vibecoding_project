@@ -6,7 +6,7 @@ The Python edition and local setup instructions are on the `main` branch.
 
 ## Update history
 
-### Unreleased
+### v2.16
 
 - Single-day events and tasks use the color of their first tag. The shared tag editor has a themed dropdown and roomier color chips, and Untagged has a white swatch.
 - Deleting a tag now opens a confirmation that shows how many tasks and events use it.
