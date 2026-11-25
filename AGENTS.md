@@ -11,3 +11,5 @@ When preparing a release, move those notes into one `releaseHistory` entry and c
 Keep existing release numbers stable. Display versions as `v2.14` when the patch is zero, or `v2.13.1` for a patch release.
 
 Before each commit, run `node scripts/update-readme.mjs` from the project root and include the synchronized README. The in-app history and README use the same source in `dist/releases.js`.
+
+When publishing to `gh-pages`, run `node scripts/prepare-pages.mjs` after updating the README. Commit the contents of the printed directory to the root of `gh-pages`. The script disables link previews and fingerprints the assets in `index.html` so the public address stays the same across releases.
