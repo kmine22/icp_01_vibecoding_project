@@ -41,16 +41,18 @@ let selectedTag = data.taskTags[0] || '';
 let editingTag = '';
 let chosenTagColor = '';
 const tagPalette = [
-  ['Graphite', '#84909e'], ['Red', '#e56670'], ['Orange', '#e89953'],
-  ['Gold', '#d4ab3b'], ['Green', '#59a676'], ['Teal', '#36a6a1'],
-  ['Blue', '#568fe0'], ['Purple', '#9578d4'], ['Pink', '#d67fa9'],
+  ['Red', '#e56670'], ['Orange', '#e89953'], ['Gold', '#d4ab3b'],
+  ['Green theme', 'theme:forest'], ['Teal', '#36a6a1'], ['Blue theme', 'theme:midnight'],
+  ['Purple theme', 'theme:plum'], ['Pink theme', 'theme:rose'], ['Gray theme', 'theme:graphite'],
 ];
+const boardPalette = [...tagPalette, ['White', '#ffffff']];
 let activeEvent = '';
 let activeScrap = '';
 let scrapBaseline;
 let scrapImageRemoved = false;
 let scrapSession = 0;
 let activeBoard = data.boards[0]?.id || '';
+let showingBoardOverview = false;
 let boardToDelete = '';
 let editingBoard = '';
 let draggedTask = '';
@@ -388,12 +390,34 @@ function renderCalendar() {
   byId('days').replaceChildren(cells);
 }
 
+function themeColorKey(color) {
+  return typeof color === 'string' ? /^theme:(graphite|midnight|forest|plum|rose)$/.exec(color)?.[1] : undefined;
+}
+
+function normalizeHexColor(value) {
+  const hex = typeof value === 'string' ? value.trim().toLowerCase().replace(/^#/, '') : '';
+  if (/^[0-9a-f]{6}$/.test(hex)) return '#' + hex;
+  if (/^[0-9a-f]{3}$/.test(hex)) return '#' + [...hex].map((digit) => digit + digit).join('');
+  return '';
+}
+
 function applyTagColor(node, color, property = '--tag-color') {
-  if (/^#[0-9a-f]{6}$/i.test(color)) {
-    node.style.setProperty(property, color);
-    return true;
-  }
-  return false;
+  const theme = themeColorKey(color);
+  const value = theme ? 'var(--palette-' + theme + ')' : normalizeHexColor(color);
+  if (!value) return false;
+  node.style.setProperty(property, value);
+  return true;
+}
+
+function boardInk(color) {
+  if (themeColorKey(color)) return 'var(--palette-ink)';
+  const hex = normalizeHexColor(color);
+  const channels = [1, 3, 5].map((offset) => {
+    const value = Number.parseInt(hex.slice(offset, offset + 2), 16) / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  const luminance = 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+  return luminance > 0.179 ? '#000' : '#fff';
 }
 
 function applyPrimaryTagColor(node, item) {
@@ -588,6 +612,7 @@ function matchesTagFilter(item) {
 }
 
 function renderTagFilter() {
+  for (const type of ['tasks', 'events']) byId('show-' + type).checked = data.filters[type];
   const options = byId('tag-filter-options');
   const tags = [...data.taskTags, ''];
   const rows = tags.map((tag, index) => {
@@ -655,6 +680,7 @@ function renderDayScraps() {
     const row = element('button', 'event-row', scrapLabel(scrap));
     row.onclick = () => {
       activeBoard = scrap.boardId;
+      showingBoardOverview = false;
       byId('day-dialog').close();
       view('board');
       renderScraps();
@@ -832,12 +858,21 @@ function renderScraps() {
   closeBoardMenu();
   boardMenuTrigger = undefined;
   byId('new-scrap').disabled = !activeBoard;
+  byId('show-all-boards').setAttribute('aria-pressed', String(showingBoardOverview));
+  byId('board-overview').hidden = !showingBoardOverview;
+  byId('scraps').hidden = showingBoardOverview;
   const boardList = byId('board-list');
+  boardList.after(boardMenu);
   boardList.replaceChildren(...data.boards.map((board, index) => {
     const item = element('div', 'board-picker');
     const button = element('button', 'board-button', board.name);
-    const selected = board.id === activeBoard;
+    const selected = board.id === activeBoard && !showingBoardOverview;
     button.setAttribute('aria-pressed', String(selected));
+    if (applyTagColor(button, board.color)) {
+      button.classList.add('board-has-color');
+      if (normalizeHexColor(board.color) === '#ffffff') button.classList.add('board-color-white');
+      button.style.setProperty('--board-ink', boardInk(board.color));
+    }
     if (data.boards.length > 1) enableBoardDrag(button, board, index, boardList);
     item.append(button);
     if (selected) {
@@ -849,8 +884,9 @@ function renderScraps() {
       item.append(boardMenu);
     }
     button.onclick = () => {
-      if (board.id !== activeBoard) {
+      if (board.id !== activeBoard || showingBoardOverview) {
         activeBoard = board.id;
+        showingBoardOverview = false;
         renderScraps();
         boardMenuTrigger?.focus();
         return;
@@ -868,6 +904,10 @@ function renderScraps() {
     };
     return item;
   }));
+  if (showingBoardOverview) {
+    renderBoardOverview();
+    return;
+  }
   const cards = data.scraps.filter((scrap) => scrap.boardId === activeBoard).map((scrap) => {
     const card = element('article', 'scrap');
     card.dataset.scrapId = scrap.id;
@@ -900,23 +940,60 @@ function renderScraps() {
     card.append(edit);
     return card;
   });
-  const empty = activeBoard ? 'Add images, notes, or links to this board.' : 'Create a board to start collecting scraps.';
+  const empty = activeBoard ? 'Add your first scrap to this board.' : 'Create a board to start collecting scraps.';
   byId('scraps').replaceChildren(...(cards.length ? cards : [element('p', 'empty', empty)]));
 }
+
+function renderBoardOverview() {
+  const cards = data.boards.map((board) => {
+    const card = element('button', 'board-overview-card');
+    const scraps = data.scraps.filter((scrap) => scrap.boardId === board.id);
+    const stack = element('span', 'board-stack');
+    stack.setAttribute('aria-hidden', 'true');
+    const previews = scraps.slice(-3);
+    for (const [index, scrap] of previews.entries()) {
+      const tile = element('span', 'board-preview');
+      tile.style.setProperty('--stack-index', String(index - (previews.length - 1) / 2));
+      const image = scrap.image || scrap.preview?.image;
+      if (image) {
+        const thumbnail = element('img');
+        thumbnail.src = image;
+        thumbnail.alt = '';
+        thumbnail.loading = 'lazy';
+        tile.append(thumbnail);
+      } else {
+        tile.append(element('span', '', scrapLabel(scrap)));
+      }
+      stack.append(tile);
+    }
+    applyTagColor(card, board.color);
+    card.append(stack, element('strong', '', board.name),
+      element('small', '', scraps.length + (scraps.length === 1 ? ' scrap' : ' scraps')));
+    card.onclick = () => {
+      activeBoard = board.id;
+      showingBoardOverview = false;
+      renderScraps();
+      boardMenuTrigger?.focus();
+    };
+    return card;
+  });
+  byId('board-overview').replaceChildren(...(cards.length ? cards : [element('p', 'empty', 'Create a board to start collecting scraps.')]));
+}
+
+byId('show-all-boards').onclick = () => {
+  showingBoardOverview = !showingBoardOverview;
+  renderScraps();
+};
 
 const settingsTheme = byId('settings-theme');
 const themeSwatches = byId('theme-swatches');
 const appearance = byId('settings-form').elements.namedItem('appearance');
 const systemDark = window.matchMedia('(prefers-color-scheme: dark)');
-const settingsIconType = byId('settings-icon-type');
+const settingsEmoji = byId('settings-emoji');
+const settingsPhoto = byId('settings-photo');
 let settingsSession = 0;
 let settingsPhotoRemoved = false;
 const maxImageBytes = 20 * 1024 * 1024;
-
-function showIconFields() {
-  byId('settings-emoji-fields').hidden = settingsIconType.value !== 'emoji';
-  byId('settings-photo-fields').hidden = settingsIconType.value !== 'photo';
-}
 
 function readImage(file) {
   return new Promise((resolve, reject) => {
@@ -954,10 +1031,11 @@ async function storeImage(file, maxDimension, maxBytes) {
 
 function updateSettingsPhotoControls() {
   const hasSavedPhoto = data.settings.iconType === 'photo' && !settingsPhotoRemoved;
-  byId('remove-settings-photo').hidden = !hasSavedPhoto && !byId('settings-photo').files.length;
-  byId('settings-photo-hint').textContent = hasSavedPhoto
-    ? 'Your current photo is saved. Choose a file to replace it.'
-    : 'Up to 20 MB. Large photos are resized for storage.';
+  const hasNewPhoto = settingsPhoto.files.length > 0;
+  byId('remove-settings-photo').hidden = !hasSavedPhoto && !hasNewPhoto;
+  byId('settings-photo-hint').textContent = hasNewPhoto
+    ? 'This photo will become your icon when you save.'
+    : hasSavedPhoto ? 'Currently using your uploaded photo. Choose an emoji to switch back.' : 'Up to 20 MB.';
 }
 
 function appearanceMode(value) {
@@ -968,16 +1046,21 @@ function appearanceMode(value) {
 function renderSwatches() {
   themeSwatches.dataset.theme = settingsTheme.value;
   themeSwatches.dataset.mode = appearanceMode(appearance.value);
+  for (const button of document.querySelectorAll('[data-icon-theme]')) {
+    button.classList.toggle('matches-theme', button.dataset.iconTheme === settingsTheme.value);
+  }
 }
 
 function renderSettings() {
   document.documentElement.dataset.theme = data.settings.theme;
-  document.documentElement.dataset.mode = appearanceMode(data.settings.appearance);
+  const mode = appearanceMode(data.settings.appearance);
+  document.documentElement.dataset.mode = mode;
+  byId('page-color-scheme').content = mode === 'light' ? 'only light' : 'dark';
   document.title = data.settings.name;
   byId('planner-name').textContent = data.settings.name;
   const icon = byId('planner-icon');
   const { iconType, iconValue } = data.settings;
-  icon.textContent = iconType === 'emoji' ? iconValue : '▦';
+  icon.textContent = iconType === 'emoji' ? iconValue : '📚';
   if (iconType === 'photo' && iconValue) {
     const photo = element('img', 'planner-icon-photo');
     photo.src = iconValue;
@@ -989,12 +1072,10 @@ function renderSettings() {
 byId('open-settings').onclick = () => {
   settingsSession++;
   byId('settings-error').textContent = '';
-  settingsIconType.value = data.settings.iconType;
   byId('settings-emoji').value = data.settings.iconType === 'emoji' ? data.settings.iconValue : '';
   byId('settings-photo').value = '';
   settingsPhotoRemoved = false;
   updateSettingsPhotoControls();
-  showIconFields();
   byId('settings-name').value = data.settings.name;
   settingsTheme.value = data.settings.theme;
   appearance.value = data.settings.appearance;
@@ -1002,18 +1083,24 @@ byId('open-settings').onclick = () => {
   byId('settings-dialog').showModal();
 };
 byId('settings-form').addEventListener('change', renderSwatches);
-settingsIconType.onchange = showIconFields;
-byId('settings-photo').onchange = updateSettingsPhotoControls;
+settingsPhoto.onchange = updateSettingsPhotoControls;
+settingsEmoji.oninput = () => {
+  if (!settingsEmoji.value.trim()) return;
+  settingsPhoto.value = '';
+  settingsPhotoRemoved = true;
+  updateSettingsPhotoControls();
+};
 byId('remove-settings-photo').onclick = () => {
   byId('settings-photo').value = '';
   settingsPhotoRemoved = true;
-  settingsIconType.value = 'default';
-  showIconFields();
   updateSettingsPhotoControls();
-  settingsIconType.focus();
+  settingsEmoji.focus();
 };
 document.querySelectorAll('[data-emoji]').forEach((button) => {
-  button.onclick = () => { byId('settings-emoji').value = button.dataset.emoji; };
+  button.onclick = () => {
+    settingsEmoji.value = button.dataset.emoji;
+    settingsEmoji.oninput();
+  };
 });
 systemDark.addEventListener('change', () => {
   if (data.settings.appearance === 'system') renderSettings();
@@ -1026,7 +1113,9 @@ byId('settings-form').onsubmit = async (event) => {
   const dialog = byId('settings-dialog');
   error.textContent = '';
   const name = byId('settings-name').value.trim() || defaultSettings.name;
-  const iconType = settingsIconType.value;
+  const file = settingsPhoto.files[0];
+  const usePhoto = file || (data.settings.iconType === 'photo' && !settingsPhotoRemoved);
+  const iconType = usePhoto ? 'photo' : settingsEmoji.value.trim() ? 'emoji' : 'default';
   const settings = { name, theme: settingsTheme.value, appearance: appearance.value, iconType, iconValue: '' };
   if (iconType === 'emoji') {
     const emoji = byId('settings-emoji').value.trim();
@@ -1037,7 +1126,6 @@ byId('settings-form').onsubmit = async (event) => {
     settings.iconValue = emoji;
   }
   if (iconType === 'photo') {
-    const file = byId('settings-photo').files[0];
     if (file) {
       if (!/^image\/(png|jpeg|webp|gif|avif)$/.test(file.type) || file.size > maxImageBytes) {
         error.textContent = 'Choose a PNG, JPEG, WebP, GIF, or AVIF image up to 20 MB.';
@@ -1049,19 +1137,48 @@ byId('settings-form').onsubmit = async (event) => {
         if (dialog.open && session === settingsSession) error.textContent = 'Could not read that photo.';
         return;
       }
-      if (!dialog.open || session !== settingsSession || settingsIconType.value !== 'photo' || byId('settings-photo').files[0] !== file) return;
-    } else if (data.settings.iconType === 'photo' && !settingsPhotoRemoved) {
-      settings.iconValue = data.settings.iconValue;
+      if (!dialog.open || session !== settingsSession || settingsPhoto.files[0] !== file) return;
     } else {
-      error.textContent = 'Choose a photo for your planner icon.';
-      return;
+      settings.iconValue = data.settings.iconValue;
     }
   }
   if (save({ ...data, settings })) dialog.close();
   else error.textContent = 'Could not save your settings. Try a smaller photo.';
 };
-function renderTagPalette(palette, selected, choose) {
-  palette.replaceChildren(...tagPalette.map(([name, color]) => {
+function renderColorPalette(palette, selected, choose, colors = tagPalette) {
+  const custom = element('div', 'custom-color');
+  const label = element('label', '', 'Custom color');
+  const row = element('div', 'custom-color-row');
+  const picker = element('input');
+  picker.type = 'color';
+  picker.setAttribute('aria-label', 'Choose custom color');
+  const hex = element('input');
+  hex.type = 'text';
+  hex.id = palette.id + '-hex';
+  hex.placeholder = '#RRGGBB';
+  hex.maxLength = 7;
+  hex.autocomplete = 'off';
+  hex.spellcheck = false;
+  label.htmlFor = hex.id;
+  const apply = element('button', 'custom-color-apply', 'Apply');
+  apply.type = 'button';
+
+  function syncCustomColor(color) {
+    const theme = themeColorKey(color);
+    const themeHex = theme && window.getComputedStyle?.(document.documentElement).getPropertyValue('--palette-' + theme);
+    const value = normalizeHexColor(themeHex || color) || '#84909e';
+    picker.value = value;
+    hex.value = value;
+    apply.disabled = false;
+  }
+
+  function selectColor(color) {
+    if (choose(color) === false) return;
+    for (const swatch of swatches) swatch.setAttribute('aria-pressed', String(swatch.value === color));
+    syncCustomColor(color);
+  }
+
+  const swatches = colors.map(([name, color]) => {
     const button = element('button', 'tag-swatch');
     button.type = 'button';
     button.value = color;
@@ -1069,9 +1186,31 @@ function renderTagPalette(palette, selected, choose) {
     button.setAttribute('aria-label', name);
     button.setAttribute('aria-pressed', String(color === selected));
     applyTagColor(button, color);
-    button.onclick = () => choose(color);
+    button.onclick = () => selectColor(color);
     return button;
-  }));
+  });
+  picker.oninput = () => {
+    hex.value = picker.value;
+    apply.disabled = false;
+  };
+  hex.oninput = () => {
+    const color = normalizeHexColor(hex.value);
+    apply.disabled = !color;
+    if (color) picker.value = color;
+  };
+  apply.onclick = () => {
+    const color = normalizeHexColor(hex.value);
+    if (color) selectColor(color);
+  };
+  hex.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' || event.isComposing) return;
+    event.preventDefault();
+    apply.onclick();
+  });
+  syncCustomColor(selected);
+  row.append(picker, hex, apply);
+  custom.append(label, row);
+  palette.replaceChildren(...swatches, custom);
 }
 
 function renderTagView() {
@@ -1104,10 +1243,10 @@ function renderTagView() {
   byId('manage-tag').hidden = !selectedTag;
   const palette = byId('quick-tag-palette');
   palette.hidden = !selectedTag;
-  if (selectedTag) renderTagPalette(palette, data.tagColors[selectedTag], (color) => {
-    if (save({ ...data, tagColors: { ...data.tagColors, [selectedTag]: color } })) {
-      [...palette.children].find((swatch) => swatch.value === color)?.focus();
-    }
+  if (selectedTag) renderColorPalette(palette, data.tagColors[selectedTag], (color) => {
+    if (!save({ ...data, tagColors: { ...data.tagColors, [selectedTag]: color } })) return false;
+    const swatch = [...palette.children].find((item) => item.value === color);
+    (swatch || palette.querySelector('.custom-color-apply'))?.focus();
   });
   const tasks = monthlyTasks.filter((task) => task.tags?.includes(selectedTag))
     .sort((a, b) => a.date.localeCompare(b.date));
@@ -1127,14 +1266,13 @@ function renderTagView() {
 
 function showTagEditor(tag = '') {
   editingTag = tag;
-  chosenTagColor = Object.hasOwn(data.tagColors, tag) ? data.tagColors[tag] : tag ? '' : tagPalette[0][1];
+  chosenTagColor = Object.hasOwn(data.tagColors, tag) ? data.tagColors[tag] : tag ? '' : 'theme:graphite';
   byId('tag-dialog-title').textContent = tag ? 'Edit tag' : 'New tag';
   byId('manage-tag-name').value = tag;
   byId('tag-error').textContent = '';
   byId('delete-tag').hidden = !tag;
-  renderTagPalette(byId('tag-palette'), chosenTagColor, (color) => {
+  renderColorPalette(byId('tag-palette'), chosenTagColor, (color) => {
     chosenTagColor = color;
-    [...byId('tag-palette').children].forEach((swatch) => swatch.setAttribute('aria-pressed', String(swatch.value === color)));
   });
   byId('tag-dialog').showModal();
 }
@@ -1218,15 +1356,15 @@ function view(section) {
     closeBoardMenu();
     closeCreateMenu();
   }
-  for (const [viewId, tabId] of [['planner', 'planner-tab'], ['board', 'board-tab'], ['tags-view', 'tags-tab']]) {
+  for (const viewId of ['planner', 'board', 'tags-view']) {
     byId(viewId).hidden = viewId !== section;
-    byId(tabId).setAttribute('aria-pressed', String(viewId === section));
   }
+  byId('planner-tab').setAttribute('aria-pressed', String(section !== 'board'));
+  byId('board-tab').setAttribute('aria-pressed', String(section === 'board'));
 }
 
 for (const filter of ['tasks', 'events']) {
   const checkbox = byId('show-' + filter);
-  checkbox.checked = data.filters[filter];
   checkbox.onchange = () => {
     if (!save({ ...data, filters: { ...data.filters, [filter]: checkbox.checked } })) {
       checkbox.checked = data.filters[filter];
@@ -1279,7 +1417,7 @@ byId('ical-form').onsubmit = async (event) => {
   const session = importSession;
   const file = icalFile.files[0];
   if (!file || file.size > 10 * 1024 * 1024) {
-    icalResult.textContent = 'Choose a .ics file up to 10 MB.';
+    icalResult.textContent = 'Choose an .ics or .csv file up to 10 MB.';
     return;
   }
   const importButton = byId('import-ical');
@@ -1287,7 +1425,7 @@ byId('ical-form').onsubmit = async (event) => {
   try {
     const text = await file.text();
     if (!icalDialog.open || session !== importSession || icalFile.files[0] !== file) return;
-    const { events, skipped } = parseIcal(text);
+    const { events, skipped } = /\.csv$/i.test(file.name) ? parseCalendarCsv(text) : parseIcal(text);
     const seen = new Set(data.events.map((item) => item.importKey).filter(Boolean));
     const imported = [];
     for (const item of events) {
@@ -1317,17 +1455,75 @@ byId('delete-event').onclick = () => {
 
 byId('planner-tab').onclick = () => view('planner');
 byId('board-tab').onclick = () => view('board');
-byId('tags-tab').onclick = () => view('tags-view');
+const calendarFilter = byId('calendar-filter');
+byId('manage-planner-tags').onclick = () => {
+  calendarFilter.open = false;
+  view('tags-view');
+};
+byId('back-to-planner').onclick = () => view('planner');
+byId('open-help').onclick = () => byId('help-dialog').showModal();
+byId('open-credits').onclick = () => byId('credits-dialog').showModal();
+byId('open-backup').onclick = () => {
+  byId('backup-file').value = '';
+  byId('backup-result').textContent = '';
+  byId('backup-dialog').showModal();
+};
+byId('export-backup').onclick = () => {
+  const url = URL.createObjectURL(new Blob([encodePlannerBackup(data)], { type: 'application/json' }));
+  const download = element('a');
+  download.href = url;
+  download.download = 'study-planner-backup-' + keyFor(new Date()) + '.json';
+  byId('backup-dialog').append(download);
+  download.click();
+  download.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+byId('restore-form').onsubmit = async (event) => {
+  event.preventDefault();
+  const dialog = byId('backup-dialog');
+  const input = byId('backup-file');
+  const result = byId('backup-result');
+  const button = byId('restore-backup');
+  const file = input.files[0];
+  if (!file || file.size > 10 * 1024 * 1024) {
+    result.textContent = 'Choose a backup file up to 10 MB.';
+    return;
+  }
+  button.disabled = true;
+  try {
+    const restored = decodePlannerBackup(await file.text());
+    if (!dialog.open || input.files[0] !== file) return;
+    if (!window.confirm('Replace this browser’s planner with this backup?')) return;
+    const previousBoard = activeBoard;
+    activeBoard = restored.boards[0]?.id || '';
+    if (save(restored)) {
+      input.value = '';
+      result.textContent = 'Backup restored.';
+    } else {
+      activeBoard = previousBoard;
+      result.textContent = 'Could not save the backup in this browser.';
+    }
+  } catch (error) {
+    if (dialog.open && input.files[0] === file) result.textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+};
 byId('new-board').onclick = () => {
   closeCreateMenu(true);
   openBoardEditor();
 };
 document.addEventListener('click', (event) => {
+  if (calendarFilter.open && !calendarFilter.contains(event.target)) calendarFilter.open = false;
   if (!createActions.hidden && !boardCreate.contains(event.target)) closeCreateMenu();
   if (!boardMenu.hidden && !boardMenu.contains(event.target) && !boardMenuTrigger?.contains(event.target)) closeBoardMenu();
 });
 document.addEventListener('keydown', (event) => {
   if (event.key !== 'Escape') return;
+  if (calendarFilter.open && calendarFilter.contains(document.activeElement)) {
+    calendarFilter.open = false;
+    calendarFilter.querySelector('summary').focus();
+  }
   if (!createActions.hidden) {
     event.preventDefault();
     closeCreateMenu(true);
@@ -1340,6 +1536,20 @@ document.addEventListener('keydown', (event) => {
 byId('rename-board').onclick = () => {
   closeBoardMenu(true);
   openBoardEditor(data.boards.find((board) => board.id === activeBoard));
+};
+byId('board-color').onclick = () => {
+  const board = data.boards.find((item) => item.id === activeBoard);
+  if (!board) return;
+  closeBoardMenu(true);
+  const dialog = byId('board-color-dialog');
+  const chooseColor = (color) => {
+    const boards = data.boards.map((item) => item.id === board.id ? { ...item, color } : item);
+    if (!save({ ...data, boards })) return false;
+    dialog.close();
+    boardMenuTrigger?.focus();
+  };
+  renderColorPalette(byId('board-color-palette'), board.color, chooseColor, boardPalette);
+  dialog.showModal();
 };
 for (const [id, offset] of [['move-board-left', -1], ['move-board-right', 1]]) {
   byId(id).onclick = () => {
@@ -1361,7 +1571,7 @@ byId('board-form').onsubmit = (submit) => {
     return;
   }
   const board = { id: editingBoard || crypto.randomUUID(), name };
-  const boards = editingBoard ? data.boards.map((item) => item.id === editingBoard ? board : item) : [...data.boards, board];
+  const boards = editingBoard ? data.boards.map((item) => item.id === editingBoard ? { ...item, name } : item) : [...data.boards, board];
   const previousBoard = activeBoard;
   activeBoard = board.id;
   if (save({ ...data, boards })) byId('board-dialog').close();
@@ -1486,19 +1696,14 @@ byId('open-recap').onclick = () => {
       days.add(date);
     }
   }
-  const groups = new Map();
-  for (const event of events.values()) {
-    for (const tag of event.tags?.length ? event.tags : ['']) {
-      if (!groups.has(tag)) groups.set(tag, { label: tag || 'Untagged', total: 0, done: 0 });
-      const group = groups.get(tag);
-      group.total++;
-      if (event.done) group.done++;
-    }
-  }
-  const eventGroups = [...groups.values()].sort((a, b) => b.total - a.total || a.label.localeCompare(b.label));
+  const listedEvents = [...events.values()]
+    .sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start))
+    .map((event) => ({ title: event.title, date: event.date, lastDate: lastCalendarDay(event) }));
   const canvas = byId('monthly-receipt');
-  drawMonthlyReceipt(canvas, { key, name: data.settings.name, tasks, boards, scrapCount, eventGroups, days: days.size,
-    eventCount: events.size, monthLabel: month.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) });
+  drawMonthlyReceipt(canvas, {
+    key, name: data.settings.name, tasks, events: listedEvents, boards, scrapCount, days: days.size,
+    monthLabel: month.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+  });
   const download = byId('download-receipt');
   download.href = canvas.toDataURL('image/png');
   download.download = 'planner-receipt-' + key + '.png';
@@ -1625,3 +1830,4 @@ byId('scrap-form').onsubmit = async (event) => {
 };
 
 render();
+byId('startup-status').hidden = true;
