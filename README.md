@@ -6,6 +6,13 @@ The Python edition and local setup instructions are on the `main` branch.
 
 ## Update history
 
+### v3.1.1
+
+- Keep Trash visible in the scrapbook and give Trash and Post-its a matching desktop icon style.
+- Center the scrapbook title and page controls with the book, and give the poster more room on mobile.
+- Center dialogs in the visible mobile viewport and keep long forms scrollable when the on-screen keyboard opens.
+- Use Command+Enter or Ctrl+Enter to save a Post-it. Enter still starts a new line.
+
 ### v3.1
 
 - Browse a board in a full-screen scrapbook with lifting pages, 3D page turns, and clickable posters.

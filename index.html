@@ -6,7 +6,7 @@
 <meta id="page-color-scheme" name="color-scheme" content="light dark">
 <title>Study Planner</title>
 <meta name="description" content="A monthly calendar, task list, and moodboard for studying.">
-<link rel="stylesheet" href="style.css?v=8759f71e62b9">
+<link rel="stylesheet" href="style.css?v=488e69da03bf">
 <script>
 window.addEventListener('error', (event) => {
   const status = document.getElementById('startup-status');
@@ -21,8 +21,8 @@ window.addEventListener('error', (event) => {
 <script defer src="calendar-csv.js?v=66099166c72a"></script>
 <script defer src="backup.js?v=1cc27b9014b5"></script>
 <script defer src="receipt.js?v=69002b405ef8"></script>
-<script defer src="releases.js?v=fc937c5a3f84"></script>
-<script defer src="app.js?v=b5d78841fe95"></script>
+<script defer src="releases.js?v=f21f4adef497"></script>
+<script defer src="app.js?v=af6a58cbdd09"></script>
 </head>
 <body>
 <div class="app-window">
@@ -108,22 +108,23 @@ window.addEventListener('error', (event) => {
 </div>
 </section>
 <section id="scrap-gallery" aria-labelledby="scrap-gallery-heading" hidden>
+<div class="scrap-gallery-layout">
 <header class="scrap-gallery-header">
-<button id="back-to-board" type="button">‹ Back to board</button>
+<button id="back-to-board" type="button" aria-label="Back to board"><span aria-hidden="true">‹</span> Board</button>
 <h1 id="scrap-gallery-heading"></h1>
 </header>
-<div class="scrap-gallery-workspace">
 <div class="scrap-gallery-stage">
 <div id="scrap-gallery-stage" class="scrap-gallery-pages"></div>
 <button id="scrap-edge-previous" class="scrap-page-edge" type="button" aria-label="Turn to previous page"></button>
 <button id="scrap-edge-next" class="scrap-page-edge" type="button" aria-label="Turn to next page"></button>
 </div>
 <div class="scrap-postit-tools">
-<button id="scrap-postit-stack" class="scrap-postit-stack" type="button" aria-label="Add a Post-it note" title="Drag a Post-it onto the book"><span aria-hidden="true">+</span><span>Post-its</span></button>
+<button id="scrap-postit-stack" class="scrap-postit-stack" type="button" aria-label="Add a Post-it note" title="Drag a Post-it onto the book">
+<span class="scrap-postit-stack-icon" aria-hidden="true"><span class="scrap-postit-stack-paper"></span></span><span>Post-its</span>
+</button>
 <div id="scrap-postit-bin" class="scrap-postit-bin" aria-hidden="true">
 <span class="scrap-postit-bin-can"><span class="scrap-postit-bin-body"></span><span id="scrap-postit-bin-mouth" class="scrap-postit-bin-mouth"></span><span class="scrap-postit-bin-lid"></span></span>
 <span>Trash</span>
-</div>
 </div>
 </div>
 <footer class="scrap-gallery-footer">
@@ -133,6 +134,7 @@ window.addEventListener('error', (event) => {
 </div>
 <div id="scrap-gallery-thumbnails" class="scrap-gallery-thumbnails" role="group" aria-label="All scraps in this board"></div>
 </footer>
+</div>
 </section>
 </main>
 </div>
