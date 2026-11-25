@@ -9,6 +9,15 @@ From the repository root, run `python3 server.py` and open link in local browser
 <!-- BEGIN UPDATE HISTORY -->
 ## Update history
 
+### v3.0
+
+- Calendar filters bring task, event, and tag visibility together. Manage tags from the Planner.
+- Simplified the mobile header and icon settings, added theme-matched emoji, renamed themes, and protected the Light theme from browser auto-darkening.
+- Monthly receipts use a monospace layout with task completion by tag and a dated list of events.
+- Browse all moodboards in a layered overview. Set board colors that fill the selected board and outline the others.
+- Tag and board palettes share theme accents and support custom colors from a picker or HEX code.
+- Settings now includes Help, Credits, Update History, local JSON backups, and calendar imports from CSV or iCalendar files.
+
 ### v2.16
 
 - Single-day events and tasks use the color of their first tag. The shared tag editor has a themed dropdown and roomier color chips, and Untagged has a white swatch.

@@ -3,28 +3,51 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta id="page-color-scheme" name="color-scheme" content="light dark">
 <title>Study Planner</title>
 <meta name="description" content="A monthly calendar, task list, and moodboard for studying.">
 <link rel="stylesheet" href="style.css">
+<script>
+window.addEventListener('error', (event) => {
+  const status = document.getElementById('startup-status');
+  if (!status || status.hidden) return;
+  const script = event.target?.tagName === 'SCRIPT' ? event.target.getAttribute('src') : '';
+  if (script || event.message) {
+    status.textContent = 'Study Planner could not start. ' + (script ? 'Could not load ' + script + '.' : event.message);
+  }
+}, true);
+</script>
 <script defer src="ical.js"></script>
+<script defer src="calendar-csv.js"></script>
+<script defer src="backup.js"></script>
 <script defer src="receipt.js"></script>
 <script defer src="releases.js"></script>
 <script defer src="app.js"></script>
 </head>
 <body>
 <div class="app-window">
-<header class="top"><div class="titlebar"><span class="window-lights" aria-hidden="true"><i></i><i></i><i></i></span><div class="brand"><span id="planner-icon" class="mark" aria-hidden="true">▦</span><span id="planner-name">Study Planner</span></div></div><nav aria-label="Views"><button id="planner-tab" aria-pressed="true">Planner</button><button id="board-tab" aria-pressed="false">Moodboard</button><button id="tags-tab" aria-pressed="false">Tags</button></nav><button id="open-settings" aria-haspopup="dialog" aria-label="Settings" title="Settings"><span aria-hidden="true">⚙︎</span></button></header>
+<header class="top"><div class="titlebar"><span class="window-lights" aria-hidden="true"><i></i><i></i><i></i></span><div class="brand"><span id="planner-icon" class="mark" aria-hidden="true">▦</span><span id="planner-name">Study Planner</span></div></div><nav aria-label="Views"><button id="planner-tab" aria-pressed="true">Planner</button><button id="board-tab" aria-pressed="false">Moodboard</button></nav><button id="open-settings" aria-haspopup="dialog" aria-label="Settings" title="Settings"><span aria-hidden="true">⚙︎</span></button></header>
 <main>
+<p id="startup-status" role="status">Opening Study Planner…</p>
+<noscript><p class="hint">Open Study Planner in a browser with JavaScript enabled.</p></noscript>
 <section id="planner">
 <div class="layout">
 <section class="calendar" aria-labelledby="month-title">
 <header class="heading"><h1 id="month-title"></h1><div class="controls"><button id="previous" aria-label="Previous month">‹</button><button id="today">Today</button><button id="next" aria-label="Next month">›</button></div></header>
 <div class="calendar-options">
-<div class="filters" role="group" aria-label="Show on calendar">
+<details id="calendar-filter" class="calendar-filter">
+<summary>Calendar filters <span id="tag-filter-status"></span></summary>
+<div class="calendar-filter-body">
+<div class="filters" role="group" aria-label="Visible item types">
 <label><input id="show-tasks" type="checkbox" checked> Tasks</label>
 <label><input id="show-events" type="checkbox" checked> Events</label>
 </div>
-<button id="open-recap" aria-haspopup="dialog">Monthly recap</button>
+<h3>Tags</h3>
+<div id="tag-filter-options" role="group" aria-label="Visible tags"></div>
+<div class="filter-actions"><button id="reset-tag-filter" type="button">Show all tags</button><button id="manage-planner-tags" type="button">Manage tags</button></div>
+</div>
+</details>
+<button id="open-recap" class="primary" aria-haspopup="dialog">Monthly recap</button>
 </div>
 <div class="weekdays" aria-hidden="true"><span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span></div>
 <div id="days" class="days"></div>
@@ -34,27 +57,27 @@
 <form id="task-form" class="inline"><input id="task-input" aria-label="New task" placeholder="Add a task…" maxlength="160" required><button aria-label="Add task">+</button></form>
 <p class="hint">Drag a task onto a date, or open it to schedule.</p>
 <div id="tasks"></div>
-<details class="tag-filter">
-<summary>Filter by tag <span id="tag-filter-status"></span></summary>
-<div id="tag-filter-options" role="group" aria-label="Visible tags"></div>
-<button id="reset-tag-filter" type="button">Show all tags</button>
-</details>
+
 </aside>
 </div>
 </section>
 <section id="board" hidden>
 <header class="heading">
 <h1>Moodboard</h1>
+<button id="show-all-boards" type="button" aria-pressed="false">All boards</button>
 </header>
 <div class="board-toolbar">
-<div id="board-list" role="group" aria-label="Moodboards"></div>
+<span class="board-list-label">Boards</span>
+<div id="board-list" role="group" aria-label="Boards"></div>
 <div id="board-actions" class="board-menu" aria-label="Board actions" hidden>
 <button id="rename-board">Rename board</button>
+<button id="board-color">Board color</button>
 <button id="move-board-left">Move left</button>
 <button id="move-board-right">Move right</button>
 <button id="delete-board" class="danger-text">Delete board</button>
 </div>
 </div>
+<div id="board-overview" class="board-overview" hidden></div>
 <div id="scraps"></div>
 <div id="board-create" class="scrap-footer">
 <button id="board-create-toggle" class="create-toggle" type="button" aria-label="Create" aria-expanded="false" aria-controls="board-create-actions"><span class="create-plus" aria-hidden="true"></span></button>
@@ -66,7 +89,7 @@
 </section>
 <section id="tags-view" hidden>
 <header class="heading">
-<h1>Tags</h1>
+<div><button id="back-to-planner" type="button">Back to planner</button><h1>Manage tags</h1></div>
 <div class="controls"><button id="tags-previous" aria-label="Previous month">‹</button><span id="tags-month"></span><button id="tags-next" aria-label="Next month">›</button></div>
 </header>
 <div class="tags-layout">
@@ -155,6 +178,10 @@
 <div class="actions"><button class="primary">Save board</button></div>
 </form>
 </dialog>
+<dialog id="board-color-dialog">
+<header class="dialog-head"><h2 id="board-color-heading">Board color</h2><button class="close" aria-label="Close board color">×</button></header>
+<div id="board-color-palette" class="tag-palette" role="group" aria-label="Board color"></div>
+</dialog>
 <dialog id="delete-board-dialog">
 <header class="dialog-head"><h2 id="delete-board-heading">Delete board</h2><button class="close" aria-label="Close delete board dialog">×</button></header>
 <form id="delete-board-form">
@@ -168,27 +195,27 @@
 <header class="dialog-head"><h2 id="settings-heading">Settings</h2><button class="close" aria-label="Close settings">×</button></header>
 <form id="settings-form">
 <label>Planner name<input id="settings-name" maxlength="60" placeholder="Study Planner"></label>
-<label>Planner icon<select id="settings-icon-type">
-<option value="default">Default</option>
-<option value="emoji">Emoji</option>
-<option value="photo">Photo</option>
-</select></label>
-<div id="settings-emoji-fields" hidden>
-<label>Emoji<input id="settings-emoji" maxlength="32" placeholder="📚" aria-describedby="emoji-hint"></label>
+<fieldset class="planner-icon-settings">
+<legend>Planner icon</legend>
+<label>Emoji<input id="settings-emoji" maxlength="32" placeholder="📚"></label>
 <div class="emoji-options" role="group" aria-label="Suggested emoji">
 <button type="button" data-emoji="📚" aria-label="Books">📚</button>
-<button type="button" data-emoji="🪴" aria-label="Potted plant">🪴</button>
-<button type="button" data-emoji="✨" aria-label="Sparkles">✨</button>
-<button type="button" data-emoji="🎀" aria-label="Ribbon">🎀</button>
+<button type="button" data-emoji="🩶" data-icon-theme="graphite" aria-label="Gray heart">🩶</button>
+<button type="button" data-emoji="🌊" data-icon-theme="midnight" aria-label="Blue wave">🌊</button>
+<button type="button" data-emoji="🪴" data-icon-theme="forest" aria-label="Potted plant">🪴</button>
+<button type="button" data-emoji="🔮" data-icon-theme="plum" aria-label="Purple crystal ball">🔮</button>
+<button type="button" data-emoji="🎀" data-icon-theme="rose" aria-label="Pink ribbon">🎀</button>
 <button type="button" data-emoji="☕️" aria-label="Coffee">☕️</button>
+<button type="button" data-emoji="🫐" aria-label="Blueberries">🫐</button>
+<button type="button" data-emoji="🌸" aria-label="Cherry blossom">🌸</button>
+<button type="button" data-emoji="✨" aria-label="Sparkles">✨</button>
+<button type="button" data-emoji="🌙" aria-label="Crescent moon">🌙</button>
+<button type="button" data-emoji="🐈‍⬛" aria-label="Black cat">🐈‍⬛</button>
 </div>
-<p id="emoji-hint" class="hint">On a Mac, press Control + Command + Space to open the emoji picker.</p>
-</div>
-<div id="settings-photo-fields" hidden>
-<label>Icon photo<input id="settings-photo" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif"></label>
+<label>Or upload a photo<input id="settings-photo" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif"></label>
 <button type="button" id="remove-settings-photo" hidden>Remove photo</button>
 <p id="settings-photo-hint" class="hint">Choose an image up to 20 MB.</p>
-</div>
+</fieldset>
 <p id="settings-error" role="alert"></p>
 <fieldset class="appearance"><legend>Appearance</legend>
 <div class="appearance-options">
@@ -197,21 +224,37 @@
 <label><input type="radio" name="appearance" value="system"> System</label>
 </div></fieldset>
 <label>Theme<select id="settings-theme">
-<option value="graphite">Graphite</option>
-<option value="midnight">Midnight Blue</option>
-<option value="forest">Forest Green</option>
-<option value="plum">Soft Plum</option>
-<option value="rose">Rose Pink</option>
+<option value="graphite">Gray</option>
+<option value="midnight">Blue</option>
+<option value="forest">Green</option>
+<option value="plum">Purple</option>
+<option value="rose">Pink</option>
 </select></label>
 <div id="theme-swatches" aria-hidden="true"><span></span><span></span><span></span></div>
-<div class="actions"><button id="open-ical-import" type="button">Import calendar…</button><button class="primary">Save settings</button></div>
+<div class="actions"><button class="primary">Save settings</button></div>
 </form>
+<nav class="settings-links" aria-label="More settings">
+<button id="open-ical-import" type="button">Import calendar</button>
+<button id="open-backup" type="button">Back up and restore</button>
+<button id="open-help" type="button">Help</button>
+<button id="open-history" type="button">Update history</button>
+<button id="open-credits" type="button" aria-haspopup="dialog">Credits</button>
+</nav>
+</dialog>
+<dialog id="credits-dialog">
+<header class="dialog-head"><h2 id="credits-heading">Credits</h2><button class="close" aria-label="Close credits">×</button></header>
+<div class="settings-credits">
+<p>2026 ni1nil0. All right Reserved.</p>
+<p>This page is vibe-coded with Codex.</p>
+<h3>Special Thanks to</h3>
+<ul><li>Minsol</li></ul>
+</div>
 </dialog>
 <dialog id="ical-dialog">
 <header class="dialog-head"><h2 id="ical-heading">Import calendar</h2><button class="close" aria-label="Close calendar import">×</button></header>
 <form id="ical-form">
-<label>iCalendar file<input id="ical-file" type="file" accept=".ics,text/calendar" required></label>
-<p class="hint">Import a .ics file. Repeating events are skipped.</p>
+<label>Calendar file<input id="ical-file" type="file" accept=".ics,.csv,text/calendar,text/csv" required></label>
+<p class="hint">Use an iCalendar (.ics) file or a CSV with Subject and Start Date columns. Repeating iCalendar events are skipped.</p>
 <p id="ical-result" role="status"></p>
 <div class="actions"><button id="import-ical" class="primary">Import events</button></div>
 </form>
@@ -221,7 +264,28 @@
 <div class="receipt-preview"><canvas id="monthly-receipt" role="img"></canvas></div>
 <div class="actions"><a class="receipt-download" id="download-receipt" download>Save PNG</a></div>
 </dialog>
-<button id="open-history" class="history-button" aria-haspopup="dialog" aria-controls="history-dialog">Update History</button>
+<dialog id="backup-dialog">
+<header class="dialog-head"><h2 id="backup-heading">Back up and restore</h2><button class="close" aria-label="Close backup settings">×</button></header>
+<p class="hint">Your planner saves in this browser. Download a backup to keep a copy or move it to another device.</p>
+<button id="export-backup" type="button" class="primary">Download backup</button>
+<form id="restore-form">
+<label>Restore a backup<input id="backup-file" type="file" accept=".json,application/json" required></label>
+<p class="hint">Restoring replaces this browser’s planner with the selected backup.</p>
+<div class="actions"><button id="restore-backup" type="submit" class="danger-button">Restore backup</button></div>
+</form>
+<p id="backup-result" role="status"></p>
+</dialog>
+<dialog id="help-dialog">
+<header class="dialog-head"><h2 id="help-heading">Help</h2><button class="close" aria-label="Close help">×</button></header>
+<section class="help-content">
+<h3>Planner</h3>
+<p>Select a date to add a task or event. Open Calendar filters to control what appears in the month or manage your tags.</p>
+<h3>Boards and scraps</h3>
+<p>A board is a collection. A scrap is one link, note, or image saved to a board. Use All boards to browse your collections.</p>
+<h3>Your data</h3>
+<p>Changes are saved in this browser. Use Back up and restore to make a copy or take your planner to another device.</p>
+</section>
+</dialog>
 <dialog id="history-dialog">
 <header class="dialog-head"><h2 id="history-heading">Update History</h2><button class="close" aria-label="Close update history">×</button></header>
 <ol id="history-list" aria-label="Version history" tabindex="0"></ol>

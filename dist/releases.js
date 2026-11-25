@@ -41,6 +41,14 @@ const releaseHistory = [
     'Deleting a tag now opens a confirmation that shows how many tasks and events use it.',
     'Added a browser-only edition for GitHub Pages that supports saved links and uploaded images.',
   ],
+  ['v3.0',
+    'Calendar filters bring task, event, and tag visibility together. Manage tags from the Planner.',
+    'Simplified the mobile header and icon settings, added theme-matched emoji, renamed themes, and protected the Light theme from browser auto-darkening.',
+    'Monthly receipts use a monospace layout with task completion by tag and a dated list of events.',
+    'Browse all moodboards in a layered overview. Set board colors that fill the selected board and outline the others.',
+    'Tag and board palettes share theme accents and support custom colors from a picker or HEX code.',
+    'Settings now includes Help, Credits, Update History, local JSON backups, and calendar imports from CSV or iCalendar files.',
+  ],
 ];
 
 if (typeof module === 'object') module.exports = { releaseHistory, unreleasedChanges };
