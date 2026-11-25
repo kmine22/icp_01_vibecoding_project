@@ -38,6 +38,7 @@ let month = new Date();
 let activeDay = '';
 let activeTask = '';
 let selectedTag = data.taskTags[0] || '';
+let tagMenuOpen = false;
 let editingTag = '';
 let chosenTagColor = '';
 const tagPalette = [
@@ -857,6 +858,10 @@ function enableBoardDrag(button, board, index, boardList) {
 function renderScraps() {
   closeBoardMenu();
   boardMenuTrigger = undefined;
+  const boardScraps = data.scraps.filter((scrap) => scrap.boardId === activeBoard);
+  const galleryButton = byId('open-scrap-gallery');
+  galleryButton.hidden = showingBoardOverview || !activeBoard;
+  galleryButton.disabled = !boardScraps.length;
   byId('new-scrap').disabled = !activeBoard;
   byId('show-all-boards').setAttribute('aria-pressed', String(showingBoardOverview));
   byId('board-overview').hidden = !showingBoardOverview;
@@ -908,7 +913,7 @@ function renderScraps() {
     renderBoardOverview();
     return;
   }
-  const cards = data.scraps.filter((scrap) => scrap.boardId === activeBoard).map((scrap) => {
+  const cards = boardScraps.map((scrap) => {
     const card = element('article', 'scrap');
     card.dataset.scrapId = scrap.id;
     if (scrap.image) {
@@ -984,6 +989,617 @@ byId('show-all-boards').onclick = () => {
   showingBoardOverview = !showingBoardOverview;
   renderScraps();
 };
+
+const scrapGallery = byId('scrap-gallery');
+const galleryStage = byId('scrap-gallery-stage');
+const galleryThumbnails = byId('scrap-gallery-thumbnails');
+const previousEdge = byId('scrap-edge-previous');
+const nextEdge = byId('scrap-edge-next');
+const postitStack = byId('scrap-postit-stack');
+const postitBin = byId('scrap-postit-bin');
+const postitBinMouth = byId('scrap-postit-bin-mouth');
+const undoPostitButton = byId('undo-scrap-postit');
+const defaultPostitPosition = { x: .14, y: .7 };
+const maxScrapNoteLength = 2000;
+const galleryMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+const gallerySinglePage = window.matchMedia('(max-width: 640px)');
+let galleryScraps = [];
+let galleryIndex = 0;
+let boardScrollY = 0;
+let pageSwipe;
+let swipeMoved = false;
+let postitDrag;
+let postitRemoval;
+let suppressPostitClick = false;
+let galleryLift;
+
+function galleryImage(src, alt = '') {
+  const image = element('img');
+  image.src = src;
+  image.alt = alt;
+  image.decoding = 'async';
+  return image;
+}
+
+function galleryThumbnail(scrap, index) {
+  const button = element('button', 'scrap-gallery-thumb');
+  const label = scrapLabel(scrap);
+  button.type = 'button';
+  button.tabIndex = -1;
+  button.title = label;
+  button.setAttribute('aria-label', `${index + 1}. ${label}`);
+  const image = scrap.image || scrap.preview?.image;
+  if (image) {
+    const thumbnail = galleryImage(image);
+    thumbnail.loading = 'lazy';
+    button.append(thumbnail);
+  } else {
+    button.append(element('span', '', label));
+  }
+  button.onclick = () => selectGalleryScrap(index);
+  return button;
+}
+
+function combinedPostitText(postits) {
+  return postits.map(({ text }) => text).join('\n\n');
+}
+
+function scrapPostits(scrap) {
+  const postits = scrap.postits;
+  if (Array.isArray(postits) && postits.every((postit) => postit && typeof postit.id === 'string'
+      && typeof postit.text === 'string' && [postit.x, postit.y].every((value) => Number.isFinite(value) && value >= 0 && value <= 1))
+      && combinedPostitText(postits) === (scrap.note || '')) return postits;
+  return scrap.note ? [{ id: 'legacy', text: scrap.note, ...defaultPostitPosition }] : [];
+}
+
+function postitsWithEditedText(postits, text) {
+  if (!text || !postits.length) return [];
+  const paragraphs = text.split('\n\n');
+  if (paragraphs.length === postits.length && postits.every((postit) => !postit.text.includes('\n\n'))) {
+    return postits.map((postit, index) => ({ ...postit, text: paragraphs[index] }));
+  }
+  return [{ ...postits[0], text }];
+}
+
+function saveGalleryPostits(scrap, postits, focusId, message = 'Note saved.') {
+  const updated = { ...scrap, postits, note: combinedPostitText(postits), updatedOn: keyFor(new Date()) };
+  const scraps = data.scraps.map((item) => item.id === scrap.id ? updated : item);
+  if (!save({ ...data, scraps }, message)) return false;
+  galleryScraps[galleryIndex] = updated;
+  galleryThumbnails.children[galleryIndex].replaceWith(galleryThumbnail(updated, galleryIndex));
+  renderGallerySelection();
+  const placed = Array.from(galleryStage.querySelectorAll('.scrap-postit')).find((node) => node.dataset.postitId === focusId);
+  (placed?.querySelector('button') || postitStack).focus({ preventScroll: true });
+  return true;
+}
+
+function hasScrapContentBesidesNotes(scrap) {
+  return Boolean(scrap.title || scrap.link || scrap.image || scrap.preview?.image);
+}
+
+function clearPostitRemoval() {
+  postitRemoval = undefined;
+  undoPostitButton.hidden = true;
+}
+
+function removeGalleryPostit(scrap, id) {
+  const postits = scrapPostits(scrap);
+  const index = postits.findIndex((postit) => postit.id === id);
+  if (index < 0) return false;
+  const remaining = [...postits];
+  const [postit] = remaining.splice(index, 1);
+  const addedTitle = !remaining.length && !hasScrapContentBesidesNotes(scrap);
+  const keptScrap = addedTitle ? { ...scrap, title: 'Untitled scrap', titleFromPreview: false } : scrap;
+  if (!saveGalleryPostits(keptScrap, remaining, remaining[0]?.id, 'Post-it removed.')) return false;
+  postitRemoval = { postit, index, addedTitle, title: scrap.title, titleFromPreview: scrap.titleFromPreview };
+  undoPostitButton.hidden = false;
+  return true;
+}
+
+undoPostitButton.onclick = () => {
+  const scrap = galleryScraps[galleryIndex];
+  if (!scrap || !postitRemoval || !closeGalleryPostit()) return;
+  const { postit, index, addedTitle, title, titleFromPreview } = postitRemoval;
+  const restored = [...scrapPostits(scrap)];
+  restored.splice(index, 0, postit);
+  if (combinedPostitText(restored).length > maxScrapNoteLength) {
+    announce('Shorten the other notes before restoring this Post-it.');
+    return;
+  }
+  const restoredScrap = addedTitle ? { ...scrap, title, titleFromPreview } : scrap;
+  if (saveGalleryPostits(restoredScrap, restored, postit.id, 'Post-it restored.')) clearPostitRemoval();
+};
+
+function galleryPostit(scrap, note, draft = false) {
+  const postit = element('div', 'scrap-postit');
+  postit.dataset.postitId = note.id;
+  postit.dataset.draft = String(draft);
+  postit.style.setProperty('--postit-x', note.x * 100 + '%');
+  postit.style.setProperty('--postit-y', note.y * 100 + '%');
+
+  const button = element('button', 'scrap-postit-button');
+  button.type = 'button';
+  button.append(element('span', 'scrap-postit-text', note.text), element('small', '', 'Edit note'));
+  button.addEventListener('pointerdown', (event) => startPostitDrag(event, button, note));
+
+  const form = element('form', 'scrap-postit-editor');
+  form.hidden = true;
+  const input = element('textarea');
+  input.rows = 4;
+  input.maxLength = maxScrapNoteLength;
+  input.defaultValue = note.text;
+  input.placeholder = 'Write a note…';
+  input.setAttribute('aria-label', 'Scrap note');
+  const error = element('p', 'scrap-postit-error');
+  error.setAttribute('role', 'alert');
+  const actions = element('div', 'scrap-postit-actions');
+  const cancel = element('button', '', 'Cancel');
+  cancel.type = 'button';
+  const submit = element('button', 'primary', 'Save note');
+  submit.type = 'submit';
+  actions.append(cancel, submit);
+  form.append(input, error, actions);
+  const currentScrap = () => galleryScraps[galleryIndex]?.id === scrap.id && data.scraps.find(({ id }) => id === scrap.id);
+
+  if (!draft) {
+    const remove = element('button', 'scrap-postit-remove', 'Remove Post-it');
+    remove.type = 'button';
+    remove.onclick = () => {
+      const current = currentScrap();
+      if (!current || !window.confirm('Remove this Post-it and its text from the scrap?')) return;
+      if (!removeGalleryPostit(current, note.id)) {
+        error.textContent = 'Could not remove the Post-it. Try again.';
+      }
+    };
+    form.append(remove);
+  }
+
+  button.onclick = () => {
+    if (!closeGalleryPostit()) return;
+    clearGalleryLift();
+    input.value = input.defaultValue;
+    error.textContent = '';
+    button.hidden = true;
+    form.hidden = false;
+    form.classList.toggle('is-editing', true);
+    input.focus();
+  };
+  cancel.onclick = () => dismissGalleryPostit(form);
+  form.onsubmit = (event) => {
+    event.preventDefault();
+    error.textContent = '';
+    const current = currentScrap();
+    if (!current) return;
+    const text = input.value.trim();
+    if (!text && draft) {
+      error.textContent = 'Write a note before saving.';
+      return;
+    }
+    if (text === note.text) {
+      dismissGalleryPostit(form);
+      return;
+    }
+    const existing = scrapPostits(current);
+    const revised = draft ? [...existing, { ...note, text }]
+      : existing.map((item) => item.id === note.id ? { ...item, text } : item).filter((item) => item.text);
+    const combined = combinedPostitText(revised);
+    if (!combined && !hasScrapContentBesidesNotes(current)) {
+      error.textContent = 'Keep a note on this scrap or add other content in Edit scrap.';
+      return;
+    }
+    if (combined.length > maxScrapNoteLength) {
+      error.textContent = 'Keep the total note text to 2,000 characters.';
+      return;
+    }
+    if (!saveGalleryPostits(current, revised, note.id)) {
+      error.textContent = 'Could not save the note. Your draft is still here.';
+    }
+  };
+  postit.append(button, form);
+  return postit;
+}
+
+function dismissGalleryPostit(form) {
+  const postit = form.parentElement;
+  if (postit.dataset.draft === 'true') {
+    postit.remove();
+    postitStack.focus({ preventScroll: true });
+    return;
+  }
+  form.hidden = true;
+  form.classList.toggle('is-editing', false);
+  const button = form.previousElementSibling;
+  button.hidden = false;
+  button.focus({ preventScroll: true });
+}
+
+function activePostitEditor() {
+  return galleryStage.firstElementChild?.querySelector('.is-editing');
+}
+
+function closeGalleryPostit() {
+  const form = activePostitEditor();
+  if (!form) return true;
+  const input = form.querySelector('textarea');
+  if (input.value.trim() !== input.defaultValue.trim() && !window.confirm('Discard your unsaved note?')) return false;
+  dismissGalleryPostit(form);
+  return true;
+}
+
+function addGalleryPostit(position) {
+  const scrap = galleryScraps[galleryIndex];
+  if (!scrap || !closeGalleryPostit()) return;
+  const postit = galleryPostit(scrap, { id: crypto.randomUUID(), text: '', ...position }, true);
+  galleryStage.firstElementChild.querySelector('.scrap-postit-layer').append(postit);
+  postit.querySelector('button').onclick();
+}
+
+function startPostitDrag(event, source, note) {
+  if (!event.isPrimary || event.button !== 0 || postitDrag) return;
+  clearGalleryLift();
+  postitDrag = { source, note, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY };
+  source.setPointerCapture(event.pointerId);
+}
+
+function clearPostitDrag() {
+  if (!postitDrag) return;
+  const { source, pointerId, ghost } = postitDrag;
+  postitDrag = undefined;
+  ghost?.remove();
+  scrapGallery.classList.toggle('dragging-postit', false);
+  scrapGallery.classList.toggle('dragging-saved-postit', false);
+  postitBin.classList.toggle('is-targeted', false);
+  source.classList.toggle('is-dragging', false);
+  if (source.hasPointerCapture(pointerId)) source.releasePointerCapture(pointerId);
+}
+
+function pointerWithin(event, bounds) {
+  return event.clientX >= bounds.left && event.clientX <= bounds.right
+    && event.clientY >= bounds.top && event.clientY <= bounds.bottom;
+}
+
+function movePostitDrag(event) {
+  if (!postitDrag || postitDrag.pointerId !== event.pointerId) return;
+  if (!postitDrag.ghost) {
+    if (Math.hypot(event.clientX - postitDrag.startX, event.clientY - postitDrag.startY) < 6) return;
+    const ghost = element('div', 'scrap-postit-ghost', postitDrag.note?.text || '');
+    ghost.setAttribute('aria-hidden', 'true');
+    document.body.append(ghost);
+    postitDrag.ghost = ghost;
+    scrapGallery.classList.toggle('dragging-postit', true);
+    if (postitDrag.note) {
+      scrapGallery.classList.toggle('dragging-saved-postit', true);
+      postitDrag.source.classList.toggle('is-dragging', true);
+    }
+  }
+  postitDrag.ghost.style.left = event.clientX + 'px';
+  postitDrag.ghost.style.top = event.clientY + 'px';
+  if (postitDrag.note) {
+    const overBin = pointerWithin(event, postitBin.getBoundingClientRect());
+    postitBin.classList.toggle('is-targeted', overBin);
+    postitDrag.ghost.classList.toggle('is-over-bin', overBin);
+  }
+}
+
+function animatePostitDiscard(ghost, event) {
+  if (galleryMotion.matches) return;
+  const mouth = postitBinMouth.getBoundingClientRect();
+  const x = mouth.left + mouth.width / 2;
+  const y = mouth.top + mouth.height / 2;
+  ghost.style.left = x + 'px';
+  ghost.style.top = y + 'px';
+  ghost.style.setProperty('--discard-x', (event.clientX - x) + 'px');
+  ghost.style.setProperty('--discard-y', (event.clientY - y) + 'px');
+  ghost.classList.add('is-discarded');
+  for (const eventName of ['animationend', 'animationcancel']) {
+    ghost.addEventListener(eventName, () => ghost.remove(), { once: true });
+  }
+  document.body.append(ghost);
+}
+
+function dropPostit(event) {
+  const drag = postitDrag;
+  if (!drag || drag.pointerId !== event.pointerId) return;
+  const ghost = drag.ghost?.getBoundingClientRect();
+  const bin = drag.note && ghost ? postitBin.getBoundingClientRect() : null;
+  clearPostitDrag();
+  if (!ghost) return;
+  suppressPostitClick = true;
+  if (bin && pointerWithin(event, bin)) {
+    if (closeGalleryPostit() && removeGalleryPostit(galleryScraps[galleryIndex], drag.note.id)) {
+      animatePostitDiscard(drag.ghost, event);
+    }
+    return;
+  }
+  const book = galleryStage.getBoundingClientRect();
+  const { clientX, clientY } = event;
+  if (!pointerWithin(event, book)) return;
+  const pin = (offset, size, paperSize) => Math.max(0, Math.min(1, (offset - paperSize / 2) / Math.max(1, size - paperSize)));
+  const position = { x: pin(clientX - book.left, book.width, ghost.width), y: pin(clientY - book.top, book.height, ghost.height) };
+  if (!drag.note) {
+    addGalleryPostit(position);
+    return;
+  }
+  if (!closeGalleryPostit()) return;
+  const scrap = galleryScraps[galleryIndex];
+  const notes = scrapPostits(scrap).map((note) => note.id === drag.note.id ? { ...note, ...position } : note);
+  saveGalleryPostits(scrap, notes, drag.note.id);
+}
+
+function gallerySpread(scrap) {
+  const label = scrapLabel(scrap);
+  const image = scrap.image || scrap.preview?.image;
+  const url = parseWebUrl(scrap.link);
+  const spread = element('div', 'scrap-spread');
+  const details = element('div', 'scrap-book-page scrap-page-details');
+  const visual = element('div', 'scrap-book-page scrap-page-visual');
+  const copy = element('div', 'scrap-page-copy');
+  const untitledNote = !image && scrap.note && !scrap.title && !scrap.preview?.title;
+  copy.append(element('h2', '', untitledNote ? 'Note' : label));
+  if (url && !image) {
+    const link = element('a', 'scrap-gallery-link', 'Open original ↗');
+    link.href = url.href;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    copy.append(link);
+  }
+  details.append(copy);
+  if (image) {
+    visual.classList.add('scrap-page-photo');
+    const poster = galleryImage(image, label);
+    if (!scrap.image) poster.referrerPolicy = 'no-referrer';
+    visual.append(scrapbookImageLink(poster, url?.href));
+    spread.classList.add('has-image');
+  } else if (url) {
+    visual.append(element('p', 'scrap-page-domain', url.hostname));
+  }
+  const notes = element('div', 'scrap-postit-layer');
+  notes.append(...scrapPostits(scrap).map((note) => galleryPostit(scrap, note)));
+  spread.append(details, visual, notes);
+  return spread;
+}
+
+function galleryTurnFace(spread, side, className) {
+  const face = element('div', 'scrap-turn-face ' + className);
+  const notes = spread.children[2].cloneNode(true);
+  notes.classList.add('scrap-turn-notes');
+  notes.dataset.side = String(side);
+  face.append(spread.children[side].cloneNode(true), notes);
+  return face;
+}
+
+function clearGalleryLift() {
+  if (!galleryLift) return;
+  const { overlay, animation } = galleryLift;
+  galleryLift = undefined;
+  animation.cancel();
+  overlay.remove();
+  delete galleryStage.dataset.lift;
+}
+
+function liftGalleryPage(edge, direction, event) {
+  if (event.pointerType !== 'mouse' && event.pointerType !== 'pen') return;
+  if (edge.disabled || edge.dataset.waiting || galleryMotion.matches || postitDrag || activePostitEditor()
+      || galleryStage.querySelector('.scrap-page-turn')) return;
+  if (galleryLift?.direction === direction) {
+    if (galleryLift.lowering) {
+      galleryLift.lowering = false;
+      galleryLift.animation.reverse();
+    }
+    return;
+  }
+  clearGalleryLift();
+  const spread = galleryStage.firstElementChild;
+  if (!spread) return;
+  const single = gallerySinglePage.matches;
+  const overlay = element('div', 'scrap-page-lift');
+  const leaf = element('div', 'scrap-turn-leaf');
+  overlay.dataset.direction = direction;
+  overlay.dataset.layout = single ? 'single' : 'spread';
+  overlay.setAttribute('aria-hidden', 'true');
+  overlay.setAttribute('inert', '');
+  leaf.append(single ? spread.cloneNode(true)
+    : galleryTurnFace(spread, direction === 'forward' ? 1 : 0, 'scrap-turn-front'));
+  overlay.append(leaf);
+  galleryStage.append(overlay);
+  galleryStage.dataset.lift = single ? 'single' : direction;
+  const angle = direction === 'forward' ? -19 : 19;
+  const animation = leaf.animate([
+    { transform: 'rotateY(0deg)', boxShadow: '0 0 0 #0000' },
+    { transform: `rotateY(${angle}deg)`, boxShadow: '0 12px 28px #0004' },
+  ],
+    { duration: 280, easing: 'cubic-bezier(.22,.72,.26,1)', fill: 'both' });
+  galleryLift = { direction, overlay, leaf, animation };
+}
+
+function lowerGalleryPage(direction) {
+  const lift = galleryLift;
+  if (!lift || lift.direction !== direction || lift.lowering) return;
+  if (!lift.animation.currentTime) {
+    clearGalleryLift();
+    return;
+  }
+  lift.lowering = true;
+  lift.animation.onfinish = () => { if (galleryLift === lift && lift.lowering) clearGalleryLift(); };
+  lift.animation.reverse();
+}
+
+function animateGalleryPage(previous, current, forward, startTransform) {
+  if (galleryMotion.matches) return;
+  const turn = element('div', 'scrap-page-turn');
+  const leaf = element('div', 'scrap-turn-leaf');
+  if (startTransform && startTransform !== 'none') leaf.style.setProperty('--turn-start', startTransform);
+  turn.dataset.direction = forward ? 'forward' : 'backward';
+  turn.dataset.layout = gallerySinglePage.matches ? 'single' : 'spread';
+  turn.setAttribute('aria-hidden', 'true');
+  turn.setAttribute('inert', '');
+  if (gallerySinglePage.matches) {
+    leaf.append(previous.cloneNode(true));
+  } else {
+    const frontPage = forward ? 1 : 0;
+    const backPage = 1 - frontPage;
+    turn.append(galleryTurnFace(previous, backPage, 'scrap-turn-hold'));
+    leaf.append(galleryTurnFace(previous, frontPage, 'scrap-turn-front'),
+      galleryTurnFace(current, backPage, 'scrap-turn-back'));
+  }
+  turn.append(leaf);
+  for (const event of ['animationend', 'animationcancel']) {
+    leaf.addEventListener(event, () => turn.remove(), { once: true });
+  }
+  galleryStage.append(turn);
+}
+
+function renderGallerySelection(previousIndex) {
+  const forward = galleryIndex > previousIndex;
+  const turnDirection = forward ? 'forward' : 'backward';
+  const startTransform = previousIndex !== undefined && galleryLift?.direction === turnDirection
+    ? window.getComputedStyle(galleryLift.leaf).transform : undefined;
+  clearGalleryLift();
+  const previousSpread = galleryStage.firstElementChild;
+  const spread = gallerySpread(galleryScraps[galleryIndex]);
+  galleryStage.replaceChildren(spread);
+  if (previousIndex !== undefined) animateGalleryPage(previousSpread, spread, forward, startTransform);
+
+  byId('scrap-gallery-count').textContent = `${galleryIndex + 1} / ${galleryScraps.length}`;
+  previousEdge.disabled = galleryIndex === 0;
+  nextEdge.disabled = galleryIndex === galleryScraps.length - 1;
+  const thumbnail = galleryThumbnails.children[galleryIndex];
+  thumbnail.tabIndex = 0;
+  thumbnail.setAttribute('aria-current', 'true');
+  const start = thumbnail.offsetLeft;
+  const end = start + thumbnail.offsetWidth;
+  if (start < galleryThumbnails.scrollLeft) galleryThumbnails.scrollLeft = start;
+  else if (end > galleryThumbnails.scrollLeft + galleryThumbnails.clientWidth) {
+    galleryThumbnails.scrollLeft = end - galleryThumbnails.clientWidth;
+  }
+}
+
+function selectGalleryScrap(index) {
+  if (index === galleryIndex || index < 0 || index >= galleryScraps.length) return;
+  const previousIndex = galleryIndex;
+  const previous = galleryThumbnails.children[previousIndex];
+  const focus = document.activeElement;
+  const restoreFocus = focus === previous || galleryStage.contains(focus);
+  if (!closeGalleryPostit()) return;
+  clearPostitRemoval();
+  previous.removeAttribute('aria-current');
+  previous.tabIndex = -1;
+  galleryIndex = index;
+  renderGallerySelection(previousIndex);
+  if (restoreFocus) galleryThumbnails.children[index].focus({ preventScroll: true });
+  if ((focus === previousEdge && previousEdge.disabled) || (focus === nextEdge && nextEdge.disabled)) {
+    galleryThumbnails.children[index].focus({ preventScroll: true });
+  }
+}
+
+function clearGallery() {
+  clearGalleryLift();
+  clearPostitDrag();
+  clearPostitRemoval();
+  suppressPostitClick = false;
+  for (const edge of [previousEdge, nextEdge]) delete edge.dataset.waiting;
+  pageSwipe = undefined;
+  swipeMoved = false;
+  galleryScraps = [];
+  galleryStage.replaceChildren();
+  galleryThumbnails.replaceChildren();
+}
+
+byId('open-scrap-gallery').onclick = () => {
+  const board = data.boards.find(({ id }) => id === activeBoard);
+  if (!board || showingBoardOverview || !scrapGallery.hidden) return;
+  galleryScraps = data.scraps.filter((scrap) => scrap.boardId === board.id);
+  if (!galleryScraps.length) return;
+  galleryIndex = 0;
+  boardScrollY = window.scrollY;
+  byId('scrap-gallery-heading').textContent = board.name;
+  galleryThumbnails.replaceChildren(...galleryScraps.map(galleryThumbnail));
+  view('scrap-gallery');
+  galleryThumbnails.scrollLeft = 0;
+  renderGallerySelection();
+  byId('back-to-board').focus({ preventScroll: true });
+  window.scrollTo(0, 0);
+};
+byId('back-to-board').onclick = () => {
+  if (!closeGalleryPostit()) return;
+  view('board');
+  byId('open-scrap-gallery').focus({ preventScroll: true });
+  window.scrollTo(0, boardScrollY);
+};
+for (const [edge, direction] of [[previousEdge, -1], [nextEdge, 1]]) {
+  const turnDirection = direction > 0 ? 'forward' : 'backward';
+  edge.onclick = () => {
+    if (edge.disabled) return;
+    edge.dataset.waiting = 'true';
+    selectGalleryScrap(galleryIndex + direction);
+  };
+  edge.addEventListener('pointerenter', (event) => liftGalleryPage(edge, turnDirection, event));
+  edge.addEventListener('pointerleave', () => {
+    delete edge.dataset.waiting;
+    lowerGalleryPage(turnDirection);
+  });
+  edge.addEventListener('blur', () => { delete edge.dataset.waiting; });
+}
+gallerySinglePage.addEventListener('change', clearGalleryLift);
+galleryMotion.addEventListener('change', clearGalleryLift);
+postitStack.onclick = () => addGalleryPostit(defaultPostitPosition);
+postitStack.addEventListener('pointerdown', (event) => startPostitDrag(event, postitStack));
+scrapGallery.addEventListener('pointerdown', () => { suppressPostitClick = false; }, true);
+scrapGallery.addEventListener('pointermove', movePostitDrag);
+scrapGallery.addEventListener('pointerup', dropPostit);
+for (const eventName of ['pointercancel', 'lostpointercapture']) {
+  scrapGallery.addEventListener(eventName, (event) => {
+    if (postitDrag?.pointerId === event.pointerId) clearPostitDrag();
+  });
+}
+scrapGallery.addEventListener('click', (event) => {
+  if (!suppressPostitClick || event.detail === 0) return;
+  suppressPostitClick = false;
+  event.preventDefault();
+  event.stopPropagation();
+}, true);
+scrapGallery.addEventListener('keydown', (event) => {
+  const editor = activePostitEditor();
+  if (event.isComposing || event.defaultPrevented) return;
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    if (postitDrag) {
+      suppressPostitClick = Boolean(postitDrag.ghost);
+      clearPostitDrag();
+    }
+    else if (editor) closeGalleryPostit();
+    else byId('back-to-board').onclick();
+  } else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+    if (postitDrag || editor?.contains(event.target)) return;
+    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    event.preventDefault();
+    selectGalleryScrap(galleryIndex + (event.key === 'ArrowRight' ? 1 : -1));
+  }
+});
+galleryStage.addEventListener('pointerdown', (event) => {
+  swipeMoved = false;
+  if (event.pointerType === 'touch' && event.isPrimary && !event.target.closest('button, form')) {
+    pageSwipe = { id: event.pointerId, x: event.clientX, y: event.clientY };
+  }
+});
+galleryStage.addEventListener('pointerup', (event) => {
+  if (pageSwipe?.id !== event.pointerId) return;
+  const dx = event.clientX - pageSwipe.x;
+  const dy = event.clientY - pageSwipe.y;
+  pageSwipe = undefined;
+  if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.4) {
+    swipeMoved = true;
+    selectGalleryScrap(galleryIndex + (dx < 0 ? 1 : -1));
+  }
+});
+galleryStage.addEventListener('pointercancel', (event) => {
+  if (pageSwipe?.id === event.pointerId) pageSwipe = undefined;
+});
+galleryStage.addEventListener('click', (event) => {
+  if (!swipeMoved || event.detail === 0) return;
+  swipeMoved = false;
+  event.preventDefault();
+}, true);
 
 const settingsTheme = byId('settings-theme');
 const themeSwatches = byId('theme-swatches');
@@ -1145,9 +1761,10 @@ byId('settings-form').onsubmit = async (event) => {
   if (save({ ...data, settings })) dialog.close();
   else error.textContent = 'Could not save your settings. Try a smaller photo.';
 };
-function renderColorPalette(palette, selected, choose, colors = tagPalette) {
-  const custom = element('div', 'custom-color');
-  const label = element('label', '', 'Custom color');
+function renderColorPalette(palette, selected, choose, { colors = tagPalette, collapseCustom = false } = {}) {
+  const custom = element(collapseCustom ? 'details' : 'div', 'custom-color');
+  if (collapseCustom) custom.append(element('summary', '', 'Custom color'));
+  const label = element('label', '', collapseCustom ? 'HEX code' : 'Custom color');
   const row = element('div', 'custom-color-row');
   const picker = element('input');
   picker.type = 'color';
@@ -1213,8 +1830,18 @@ function renderColorPalette(palette, selected, choose, colors = tagPalette) {
   palette.replaceChildren(...swatches, custom);
 }
 
+function closeTagMenu(restoreFocus = false) {
+  if (!tagMenuOpen) return;
+  tagMenuOpen = false;
+  const button = renderTagView();
+  if (restoreFocus) button?.focus();
+}
+
 function renderTagView() {
-  if (!data.taskTags.includes(selectedTag)) selectedTag = data.taskTags[0] || '';
+  if (!data.taskTags.includes(selectedTag)) {
+    selectedTag = data.taskTags[0] || '';
+    tagMenuOpen = false;
+  }
   byId('tags-month').textContent = month.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
   const monthKey = keyFor(month).slice(0, 7);
   const monthlyTasks = data.tasks.filter((task) => task.date?.slice(0, 7) === monthKey);
@@ -1223,9 +1850,13 @@ function renderTagView() {
   const monthlyEvents = data.events.filter((event) => event.date <= lastDay && lastCalendarDay(event) >= firstDay);
   let selectedButton;
   const items = data.taskTags.map((tag) => {
+    const entry = element('div', 'tag-list-entry');
     const item = element('button', 'tag-list-item');
-    item.setAttribute('aria-pressed', String(tag === selectedTag));
-    if (tag === selectedTag) selectedButton = item;
+    const selected = tag === selectedTag;
+    const expanded = selected && tagMenuOpen;
+    item.setAttribute('aria-pressed', String(selected));
+    item.setAttribute('aria-expanded', String(expanded));
+    if (selected) selectedButton = item;
     const dot = element('span', 'tag-dot');
     dot.setAttribute('aria-hidden', 'true');
     applyTagColor(dot, data.tagColors[tag]);
@@ -1233,21 +1864,39 @@ function renderTagView() {
       + monthlyEvents.filter((event) => event.tags?.includes(tag)).length;
     item.append(dot, element('span', 'tag-list-name', tag), element('span', 'tag-list-count', count));
     item.onclick = () => {
+      tagMenuOpen = !expanded;
       selectedTag = tag;
       renderTagView()?.focus();
     };
-    return item;
+    entry.append(item);
+    if (expanded) {
+      const menu = element('div', 'tag-menu');
+      menu.id = 'selected-tag-menu';
+      item.setAttribute('aria-controls', menu.id);
+      const palette = element('div', 'tag-palette');
+      palette.id = 'selected-tag-palette';
+      palette.setAttribute('role', 'group');
+      palette.setAttribute('aria-label', 'Tag color');
+      const edit = element('button', 'tag-menu-edit', 'Edit tag');
+      edit.onclick = () => {
+        closeTagMenu(true);
+        showTagEditor(tag);
+      };
+      renderColorPalette(palette, data.tagColors[tag], (color) => {
+        tagMenuOpen = false;
+        if (!save({ ...data, tagColors: { ...data.tagColors, [tag]: color } })) {
+          tagMenuOpen = true;
+          return false;
+        }
+        byId('tag-list').querySelector('[aria-pressed="true"]')?.focus();
+      }, { collapseCustom: true });
+      menu.append(palette, edit);
+      entry.append(menu);
+    }
+    return entry;
   });
   byId('tag-list').replaceChildren(...(items.length ? items : [element('p', 'empty', 'Create a tag or add one to a task or event.')]));
   byId('tag-tasks-heading').textContent = selectedTag || 'Tasks and events';
-  byId('manage-tag').hidden = !selectedTag;
-  const palette = byId('quick-tag-palette');
-  palette.hidden = !selectedTag;
-  if (selectedTag) renderColorPalette(palette, data.tagColors[selectedTag], (color) => {
-    if (!save({ ...data, tagColors: { ...data.tagColors, [selectedTag]: color } })) return false;
-    const swatch = [...palette.children].find((item) => item.value === color);
-    (swatch || palette.querySelector('.custom-color-apply'))?.focus();
-  });
   const tasks = monthlyTasks.filter((task) => task.tags?.includes(selectedTag))
     .sort((a, b) => a.date.localeCompare(b.date));
   const events = monthlyEvents.filter((event) => event.tags?.includes(selectedTag))
@@ -1277,8 +1926,10 @@ function showTagEditor(tag = '') {
   byId('tag-dialog').showModal();
 }
 
-byId('new-tag').onclick = () => showTagEditor();
-byId('manage-tag').onclick = () => showTagEditor(selectedTag);
+byId('new-tag').onclick = () => {
+  closeTagMenu();
+  showTagEditor();
+};
 
 function replaceTag(items, previous, replacement) {
   return items.map((item) => {
@@ -1352,15 +2003,20 @@ function render() {
 }
 
 function view(section) {
+  const showGallery = section === 'scrap-gallery';
+  if (!showGallery && !scrapGallery.hidden) clearGallery();
+  document.documentElement.classList.toggle('gallery-open', showGallery);
+  if (section !== 'tags-view') closeTagMenu();
   if (section !== 'board') {
     closeBoardMenu();
     closeCreateMenu();
   }
-  for (const viewId of ['planner', 'board', 'tags-view']) {
+  for (const viewId of ['planner', 'board', 'tags-view', 'scrap-gallery']) {
     byId(viewId).hidden = viewId !== section;
   }
-  byId('planner-tab').setAttribute('aria-pressed', String(section !== 'board'));
-  byId('board-tab').setAttribute('aria-pressed', String(section === 'board'));
+  const inMoodboard = section === 'board' || showGallery;
+  byId('planner-tab').setAttribute('aria-pressed', String(!inMoodboard));
+  byId('board-tab').setAttribute('aria-pressed', String(inMoodboard));
 }
 
 for (const filter of ['tasks', 'events']) {
@@ -1515,11 +2171,16 @@ byId('new-board').onclick = () => {
 };
 document.addEventListener('click', (event) => {
   if (calendarFilter.open && !calendarFilter.contains(event.target)) calendarFilter.open = false;
+  if (tagMenuOpen && !event.composedPath().includes(byId('tag-list'))) closeTagMenu();
   if (!createActions.hidden && !boardCreate.contains(event.target)) closeCreateMenu();
   if (!boardMenu.hidden && !boardMenu.contains(event.target) && !boardMenuTrigger?.contains(event.target)) closeBoardMenu();
 });
 document.addEventListener('keydown', (event) => {
   if (event.key !== 'Escape') return;
+  if (tagMenuOpen) {
+    event.preventDefault();
+    closeTagMenu(true);
+  }
   if (calendarFilter.open && calendarFilter.contains(document.activeElement)) {
     calendarFilter.open = false;
     calendarFilter.querySelector('summary').focus();
@@ -1548,7 +2209,7 @@ byId('board-color').onclick = () => {
     dialog.close();
     boardMenuTrigger?.focus();
   };
-  renderColorPalette(byId('board-color-palette'), board.color, chooseColor, boardPalette);
+  renderColorPalette(byId('board-color-palette'), board.color, chooseColor, { colors: boardPalette });
   dialog.showModal();
 };
 for (const [id, offset] of [['move-board-left', -1], ['move-board-right', 1]]) {
@@ -1823,6 +2484,9 @@ byId('scrap-form').onsubmit = async (event) => {
   const savedTitle = title || previewTitle;
   const titleFromPreview = Boolean(savedTitle && (!title || title === suggestedTitle));
   const scrap = { ...previous, id, title: savedTitle, titleFromPreview, note, link, image, preview, boardId, createdOn, updatedOn };
+  if (previous && note !== (previous.note || '') && previous.postits?.length) {
+    scrap.postits = postitsWithEditedText(scrapPostits(previous), note);
+  }
   const scraps = previous ? data.scraps.map((item) => item.id === id ? scrap : item) : [...data.scraps, scrap];
   const message = boardId === activeBoard ? '' : 'Saved to ' + data.boards.find((board) => board.id === boardId).name;
   if (save({ ...data, scraps }, message)) byId('scrap-dialog').close();
