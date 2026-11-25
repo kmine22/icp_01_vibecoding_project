@@ -1137,6 +1137,14 @@ function galleryPostit(scrap, note, draft = false) {
   cancel.type = 'button';
   const submit = element('button', 'primary', 'Save note');
   submit.type = 'submit';
+  submit.title = 'Save note (⌘+Enter or Ctrl+Enter)';
+  submit.setAttribute('aria-keyshortcuts', 'Meta+Enter Control+Enter');
+  input.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' || event.isComposing || event.keyCode === 229 || event.altKey
+        || event.shiftKey || !(event.metaKey || event.ctrlKey)) return;
+    event.preventDefault();
+    if (!event.repeat) form.requestSubmit(submit);
+  });
   actions.append(cancel, submit);
   form.append(input, error, actions);
   const currentScrap = () => galleryScraps[galleryIndex]?.id === scrap.id && data.scraps.find(({ id }) => id === scrap.id);
@@ -1247,7 +1255,6 @@ function clearPostitDrag() {
   postitDrag = undefined;
   ghost?.remove();
   scrapGallery.classList.toggle('dragging-postit', false);
-  scrapGallery.classList.toggle('dragging-saved-postit', false);
   postitBin.classList.toggle('is-targeted', false);
   source.classList.toggle('is-dragging', false);
   if (source.hasPointerCapture(pointerId)) source.releasePointerCapture(pointerId);
@@ -1267,10 +1274,7 @@ function movePostitDrag(event) {
     document.body.append(ghost);
     postitDrag.ghost = ghost;
     scrapGallery.classList.toggle('dragging-postit', true);
-    if (postitDrag.note) {
-      scrapGallery.classList.toggle('dragging-saved-postit', true);
-      postitDrag.source.classList.toggle('is-dragging', true);
-    }
+    if (postitDrag.note) postitDrag.source.classList.toggle('is-dragging', true);
   }
   postitDrag.ghost.style.left = event.clientX + 'px';
   postitDrag.ghost.style.top = event.clientY + 'px';
@@ -2310,6 +2314,20 @@ function scrapFields() {
 function mayCloseScrap() {
   const dirty = scrapFields() !== scrapBaseline || byId('scrap-image').files.length > 0;
   return !dirty || window.confirm('Discard your unsaved scrap changes?');
+}
+
+const dialogViewport = window.visualViewport;
+if (dialogViewport) {
+  const updateDialogViewport = () => {
+    const style = document.documentElement.style;
+    style.setProperty('--dialog-viewport-top', dialogViewport.offsetTop + 'px');
+    style.setProperty('--dialog-viewport-left', dialogViewport.offsetLeft + 'px');
+    style.setProperty('--dialog-viewport-height', dialogViewport.height + 'px');
+    style.setProperty('--dialog-viewport-width', dialogViewport.width + 'px');
+  };
+  dialogViewport.addEventListener('resize', updateDialogViewport);
+  dialogViewport.addEventListener('scroll', updateDialogViewport);
+  updateDialogViewport();
 }
 
 document.querySelectorAll('dialog').forEach((dialog) => {

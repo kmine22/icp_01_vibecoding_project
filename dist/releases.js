@@ -54,6 +54,12 @@ const releaseHistory = [
     'Drag Post-its around the scrapbook or into an animated trash can. Post-its save back to the scrap, and removals can be undone.',
     'Open a tag’s color and edit menu from its row in Manage tags.',
   ],
+  ['v3.1.1',
+    'Keep Trash visible in the scrapbook and give Trash and Post-its a matching desktop icon style.',
+    'Center the scrapbook title and page controls with the book, and give the poster more room on mobile.',
+    'Center dialogs in the visible mobile viewport and keep long forms scrollable when the on-screen keyboard opens.',
+    'Use Command+Enter or Ctrl+Enter to save a Post-it. Enter still starts a new line.',
+  ],
 ];
 
 if (typeof module === 'object') module.exports = { releaseHistory, unreleasedChanges };
