@@ -6,6 +6,12 @@ The Python edition and local setup instructions are on the `main` branch.
 
 ## Update history
 
+### v3.1
+
+- Browse a board in a full-screen scrapbook with lifting pages, 3D page turns, and clickable posters.
+- Drag Post-its around the scrapbook or into an animated trash can. Post-its save back to the scrap, and removals can be undone.
+- Open a tag’s color and edit menu from its row in Manage tags.
+
 ### v3.0
 
 - Calendar filters bring task, event, and tag visibility together. Manage tags from the Planner.

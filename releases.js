@@ -49,6 +49,11 @@ const releaseHistory = [
     'Tag and board palettes share theme accents and support custom colors from a picker or HEX code.',
     'Settings now includes Help, Credits, Update History, local JSON backups, and calendar imports from CSV or iCalendar files.',
   ],
+  ['v3.1',
+    'Browse a board in a full-screen scrapbook with lifting pages, 3D page turns, and clickable posters.',
+    'Drag Post-its around the scrapbook or into an animated trash can. Post-its save back to the scrap, and removals can be undone.',
+    'Open a tag’s color and edit menu from its row in Manage tags.',
+  ],
 ];
 
 if (typeof module === 'object') module.exports = { releaseHistory, unreleasedChanges };
