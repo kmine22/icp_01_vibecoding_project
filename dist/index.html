@@ -53,11 +53,14 @@ window.addEventListener('error', (event) => {
 <div id="days" class="days"></div>
 </section>
 <aside class="panel" aria-labelledby="tasks-title">
-<h2 id="tasks-title">All tasks <span id="task-count"></span></h2>
+<h2 id="tasks-title">Tasks <span id="task-count" class="task-count" title="Incomplete tasks"></span></h2>
 <form id="task-form" class="inline"><input id="task-input" aria-label="New task" placeholder="Add a task…" maxlength="160" required><button aria-label="Add task">+</button></form>
 <p class="hint">Drag a task onto a date, or open it to schedule.</p>
 <div id="tasks"></div>
-
+<details id="completed-tasks" class="completed-tasks" hidden>
+<summary>Completed <span id="completed-task-count" class="task-count"></span></summary>
+<div id="completed-task-list" class="completed-task-list"></div>
+</details>
 </aside>
 </div>
 </section>
@@ -170,7 +173,6 @@ window.addEventListener('error', (event) => {
 <div id="event-known-tags" class="tag-picker-options" role="listbox" aria-label="Available tags" hidden></div>
 </div>
 </fieldset>
-<label class="event-completion"><input id="event-done" type="checkbox"> Completed</label>
 <p id="event-error" role="alert"></p>
 <div class="actions"><button type="button" id="delete-event" hidden>Delete event</button><button class="primary">Save event</button></div>
 </form>
@@ -231,17 +233,13 @@ window.addEventListener('error', (event) => {
 <label>Emoji<input id="settings-emoji" maxlength="32" placeholder="📚"></label>
 <div class="emoji-options" role="group" aria-label="Suggested emoji">
 <button type="button" data-emoji="📚" aria-label="Books">📚</button>
-<button type="button" data-emoji="🩶" data-icon-theme="graphite" aria-label="Gray heart">🩶</button>
-<button type="button" data-emoji="🌊" data-icon-theme="midnight" aria-label="Blue wave">🌊</button>
 <button type="button" data-emoji="🪴" data-icon-theme="forest" aria-label="Potted plant">🪴</button>
+<button type="button" data-emoji="🌊" data-icon-theme="midnight" aria-label="Blue wave">🌊</button>
 <button type="button" data-emoji="🔮" data-icon-theme="plum" aria-label="Purple crystal ball">🔮</button>
 <button type="button" data-emoji="🎀" data-icon-theme="rose" aria-label="Pink ribbon">🎀</button>
+<button type="button" data-emoji="🐈‍⬛" data-icon-theme="graphite" aria-label="Black cat">🐈‍⬛</button>
 <button type="button" data-emoji="☕️" aria-label="Coffee">☕️</button>
-<button type="button" data-emoji="🫐" aria-label="Blueberries">🫐</button>
-<button type="button" data-emoji="🌸" aria-label="Cherry blossom">🌸</button>
 <button type="button" data-emoji="✨" aria-label="Sparkles">✨</button>
-<button type="button" data-emoji="🌙" aria-label="Crescent moon">🌙</button>
-<button type="button" data-emoji="🐈‍⬛" aria-label="Black cat">🐈‍⬛</button>
 </div>
 <label>Or upload a photo<input id="settings-photo" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif"></label>
 <button type="button" id="remove-settings-photo" hidden>Remove photo</button>

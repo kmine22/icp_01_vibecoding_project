@@ -192,7 +192,10 @@ class Handler(SimpleHTTPRequestHandler):
         except PreviewBlocked:
             status = 422
             payload = {'error': 'The source site denied preview access. You can still save the link or add an image.'}
-        except (ValueError, OSError, http.client.HTTPException, LookupError):
+        except (OSError, http.client.HTTPException):
+            status = 502
+            payload = {'error': 'The preview server could not reach the source site. You can still save the link or add an image.'}
+        except (ValueError, LookupError):
             status = 422
             payload = {'error': 'Preview unavailable. You can still save this link.'}
         body = json.dumps(payload).encode()

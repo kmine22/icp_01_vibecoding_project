@@ -60,6 +60,11 @@ const releaseHistory = [
     'Center dialogs in the visible mobile viewport and keep long forms scrollable when the on-screen keyboard opens.',
     'Use Command+Enter or Ctrl+Enter to save a Post-it. Enter still starts a new line.',
   ],
+  ['v3.2',
+    'Keep the task sidebar focused on incomplete tasks and tuck completed ones into a collapsed list.',
+    'Remove the completion checkbox and completed styling from calendar events.',
+    'Explain when automatic link previews are unavailable and distinguish preview connection failures from blocked links.',
+  ],
 ];
 
 if (typeof module === 'object') module.exports = { releaseHistory, unreleasedChanges };

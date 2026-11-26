@@ -1,6 +1,6 @@
 const byId = (id) => document.getElementById(id);
 const storageKey = 'study-planner-v1';
-const linkPreviewsEnabled = document.documentElement.dataset.linkPreviews !== 'off';
+const linkPreviewsEnabled = document.documentElement.dataset.linkPreviews !== 'off' && window.location?.protocol !== 'file:';
 const defaultBoard = { id: 'general', name: 'General' };
 const defaultSettings = { name: 'Study Planner', theme: 'graphite', appearance: 'dark', iconType: 'default', iconValue: '' };
 let data = { settings: defaultSettings, boards: [defaultBoard], tasks: [], taskTags: [], tagColors: {}, scraps: [], events: [], filters: { tasks: true, events: true, hiddenTags: [], untagged: true } };
@@ -120,6 +120,18 @@ function showDraft(...content) {
   container.hidden = !content.length;
 }
 
+function showDraftHint(message) {
+  showDraft(...(message ? [element('p', 'hint', message)] : []));
+}
+
+function previewSetupHint(url) {
+  if (!parseWebUrl(url)) return '';
+  if (window.location?.protocol === 'file:') {
+    return 'Open the planner through its local server for automatic previews. You can still save the link or add an image.';
+  }
+  return linkPreviewsEnabled ? '' : 'Automatic previews are off in this browser-only edition. You can still save the link or add an image.';
+}
+
 function showDraftPreview(preview) {
   const status = element('p', 'hint', preview.image ? 'Preview available.' : 'Text preview available. No thumbnail provided.');
   const card = previewCard(preview, isPinterestLink(byId('scrap-link').value.trim()));
@@ -149,6 +161,9 @@ async function loadPreview(url) {
     if (!preview.title && !preview.description && !preview.image) throw new Error('No preview found. You can still save this link.');
     previewCache.set(url, preview);
     return preview;
+  } catch (error) {
+    if (error instanceof TypeError) throw new Error('Could not reach the preview server. You can still save this link.');
+    throw error;
   } finally {
     clearTimeout(timeout);
   }
@@ -161,9 +176,12 @@ byId('scrap-link').addEventListener('input', () => {
   if (suggestedTitle && titleInput.value === suggestedTitle) titleInput.value = '';
   suggestedTitle = '';
   const url = byId('scrap-link').value.trim();
-  showDraft();
-  if (!linkPreviewsEnabled || !/^https?:\/\//i.test(url)) return;
-  showDraft(element('p', 'hint', 'Loading preview…'));
+  const hint = previewSetupHint(url);
+  if (hint || !parseWebUrl(url)) {
+    showDraftHint(hint);
+    return;
+  }
+  showDraftHint('Loading preview…');
   previewTimer = setTimeout(async () => {
     const isCurrent = () => byId('scrap-dialog').open && byId('scrap-link').value.trim() === url;
     try {
@@ -177,7 +195,7 @@ byId('scrap-link').addEventListener('input', () => {
         showDraftPreview(preview);
       }
     } catch (error) {
-      if (isCurrent()) showDraft(element('p', 'hint', error.name === 'AbortError' ? 'Preview unavailable. You can still save this link.' : error.message));
+      if (isCurrent()) showDraftHint(error.name === 'AbortError' ? 'The preview request timed out. You can still save this link.' : error.message);
     }
   }, 350);
 });
@@ -255,7 +273,6 @@ function openEvent(date, event) {
   byId('event-start').value = event?.start || '';
   byId('event-end').value = event?.end || '';
   eventTagEditor.set(event?.tags);
-  byId('event-done').checked = Boolean(event?.done);
   byId('event-error').textContent = '';
   byId('delete-event').hidden = !event;
   byId('event-dialog').showModal();
@@ -651,20 +668,36 @@ byId('reset-tag-filter').onclick = () => {
   save({ ...data, filters });
 };
 
+const completedTasks = byId('completed-tasks');
+
+function renderCompletedTasks(tasks = data.tasks.filter((task) => task.done && matchesTagFilter(task))) {
+  completedTasks.hidden = !tasks.length;
+  if (!tasks.length) completedTasks.open = false;
+  byId('completed-task-count').textContent = tasks.length;
+  byId('completed-task-list').replaceChildren(...(completedTasks.open ? tasks.map((task) => taskRow(task, true)) : []));
+}
+
+completedTasks.addEventListener('toggle', () => renderCompletedTasks());
+
 function renderTasks() {
   const tasks = byId('tasks');
   tasks.replaceChildren();
   const visible = data.tasks.filter(matchesTagFilter);
-  byId('task-count').textContent = visible.length;
-  const unscheduled = visible.filter((task) => !task.date);
-  const scheduled = visible.filter((task) => task.date).sort((a, b) => a.date.localeCompare(b.date));
-  for (const [label, group, empty] of [
-    ['Unscheduled', unscheduled, 'New tasks start here.'],
-    ['Scheduled', scheduled, 'Tasks with a date appear here.'],
+  const active = visible.filter((task) => !task.done);
+  byId('task-count').textContent = active.length;
+  renderCompletedTasks(visible.filter((task) => task.done));
+  if (!active.length) {
+    const message = data.tasks.some((task) => !task.done) ? 'No matching open tasks.' : 'No open tasks.';
+    tasks.append(element('p', 'empty', message));
+    return;
+  }
+  const unscheduled = active.filter((task) => !task.date);
+  const scheduled = active.filter((task) => task.date).sort((a, b) => a.date.localeCompare(b.date));
+  for (const [label, group] of [
+    ['Unscheduled', unscheduled],
+    ['Scheduled', scheduled],
   ]) {
-    tasks.append(element('h3', 'group', label));
-    if (!group.length) tasks.append(element('p', 'empty', visible.length < data.tasks.length ? 'No matching tasks.' : empty));
-    group.forEach((task) => tasks.append(taskRow(task, true)));
+    if (group.length) tasks.append(element('h3', 'group', label), ...group.map((task) => taskRow(task, true)));
   }
 }
 
@@ -699,7 +732,7 @@ function eventRow(event, date, showDate = false) {
   applyPrimaryTagColor(row, event);
   const time = eventTime(event, date);
   row.append(element('span', 'task-date', showDate ? shortDate(date) + ' · ' + time : time),
-    element('span', event.done ? 'done' : '', event.title));
+    element('span', '', event.title));
   for (const tag of event.tags || []) {
     const chip = element('span', 'task-tag', tag);
     applyTagColor(chip, data.tagColors[tag]);
@@ -745,7 +778,7 @@ function openScrap(scrap) {
   byId('scrap-link').value = scrap?.link || '';
   draftPreview = scrap?.preview;
   if (draftPreview) showDraftPreview(draftPreview);
-  else showDraft();
+  else showDraftHint(previewSetupHint(scrap?.link));
   byId('scrap-heading').textContent = scrap ? 'Edit scrap' : 'Add scrap';
   byId('scrap-error').textContent = '';
   byId('delete-scrap').hidden = !scrap;
@@ -2055,7 +2088,7 @@ byId('event-form').onsubmit = (submit) => {
   }
   const tags = eventTagEditor.read();
   const taskTags = [...new Set([...data.taskTags, ...tags])];
-  const event = { id: activeEvent || crypto.randomUUID(), title, date, endDate, start, end, tags, done: byId('event-done').checked };
+  const event = { id: activeEvent || crypto.randomUUID(), title, date, endDate, start, end, tags };
   const events = activeEvent ? data.events.map((item) => item.id === activeEvent ? { ...item, ...event } : item) : [...data.events, event];
   if (save({ ...data, events, taskTags }, 'Event saved for ' + shortDate(date))) byId('event-dialog').close();
 };

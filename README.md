@@ -9,6 +9,12 @@ From the repository root, run `python3 server.py` and open link in local browser
 <!-- BEGIN UPDATE HISTORY -->
 ## Update history
 
+### v3.2
+
+- Keep the task sidebar focused on incomplete tasks and tuck completed ones into a collapsed list.
+- Remove the completion checkbox and completed styling from calendar events.
+- Explain when automatic link previews are unavailable and distinguish preview connection failures from blocked links.
+
 ### v3.1.1
 
 - Keep Trash visible in the scrapbook and give Trash and Post-its a matching desktop icon style.
